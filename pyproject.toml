@@ -27,5 +27,8 @@ drive = ["google-api-python-client>=2.100", "google-auth-oauthlib>=1.2"]   # att
 [project.scripts]
 flux-relay = "flux_brain.relay:main"
 
+[tool.setuptools]
+script-files = ["bin/flux-relay-loop", "bin/flux-ask"]   # shell helpers installed next to flux-relay
+
 [tool.setuptools.packages.find]
 include = ["flux_brain*"]
