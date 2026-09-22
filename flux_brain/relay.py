@@ -6,9 +6,10 @@ all Discord I/O and talks to the repo only through the GitHub REST API (no local
 rebase conflicts with the routines or the phone).
 
   inbound : new human messages in #vault -> inbox/<ts>-<msgid>.md, then a ✅ reaction (or a short
-            reply if reactions are denied). Attachments go to Google Drive (shared drive "Vault",
-            folder "Claude"), NOT into git, so the repo and the phone copy stay light; the note
-            links to the Drive file. (Changed 2026-09-15 at the owner's request; was raw/attachments/.)
+            reply if reactions are denied). With the Drive module on, attachment originals go to a
+            Drive folder, NOT into git, so the repo and the phone copy stay light, and the note links
+            the Drive file; without it the note links Discord's copy. The extracted text always lands
+            in raw/attachments/.
   outbound: new files under briefings/daily, briefings/weekly, notify/ -> posted to #vault once.
   run link: each time the relay starts the vault-inbox routine it posts the run's claude.ai link to
             #vault, so the owner can watch Claude work step by step (2026-09-16, the owner).
@@ -131,7 +132,7 @@ HOST_NOTE = re.compile(r"^inbox/\d{4}-\d{2}-\d{2}T\d{4}(\d{2})?Z-(keep|gmail|mem
 MANIFEST_MAX = 20  # inbox paths listed in the start message (P8)
 DISCORD = "https://discord.com/api/v10"
 GITHUB = "https://api.github.com"
-# Attachments go to Drive (shared drive "Vault" > "Claude"): vaultlib.drive.
+# Attachments go to cloud storage when the Drive module is on: flux_brain.lib.drive.
 
 # A capture matching these is NOT filed: the repo is synced to a phone and a laptop, so a pasted key
 # would spread. Shared with memory-split.py (2026-09-15) so the two can never drift apart.
@@ -214,7 +215,7 @@ class Relay:
         # tree-cache.json: the branch tip is checked with a conditional GET each tick and the recursive tree is
         # re-fetched only when it moved (item 7); this process is per-run, so the cache lives on disk.
         self.ghc = GitHub(retry_writes=True, cache_file=os.path.join(STATE_DIR, "tree-cache.json"))
-        self.drive = Drive(self.s)
+        self.drive = Drive(self.s) if CFG.mod_drive else None  # Drive module: attachments to cloud storage
 
     # ---------- Discord ----------
     def discord(self, method, path, **kw):
@@ -377,12 +378,18 @@ class Relay:
         an extraction failure is recorded in the line, never raised (the capture still lands)."""
         dl = self.s.get(a["url"], timeout=120)
         dl.raise_for_status()
-        # Drive instead of git (2026-09-15): keeps binary history out of the repo.
+        # The original goes to cloud storage instead of git (keeps binary history out of the repo) when the Drive
+        # module is on; without it the note links the Discord copy, which Discord expires after some weeks, so the
+        # text file below is the lasting part.
         drive_name = f"{stamp}-{m['id']}-{name}"
-        link = self.drive_upload(drive_name, dl.content, a.get("content_type") or "application/octet-stream")
         kb = max(1, a.get("size", 0) // 1024)
         mime = a.get("content_type") or "application/octet-stream"
-        entry = f"- [{name}]({link}) ({mime}, {kb} KB, original in Google Drive)"
+        if CFG.mod_drive:
+            link = self.drive_upload(drive_name, dl.content, mime)
+            entry = f"- [{name}]({link}) ({mime}, {kb} KB, original in Google Drive)"
+        else:
+            link = a["url"]
+            entry = f"- [{name}]({link}) ({mime}, {kb} KB, Discord copy, expires; text below is kept)"
         # att_text, NOT text: `text` holds the Discord message itself (bug caught in testing
         # 2026-09-15, the note body was being replaced by the attachment's text).
         try:
@@ -419,7 +426,7 @@ class Relay:
         for a in m.get("attachments", []):
             name = re.sub(r"[^A-Za-z0-9._-]", "_", a["filename"])
             if a.get("size", 0) > MAX_ATTACHMENT:
-                lines.append(f"- attachment `{name}` skipped (over 20 MB)")
+                lines.append(f"- attachment `{name}` skipped (over {CFG.max_attachment_mb} MB)")
                 continue
             try:
                 lines.append(self.attachment_entry(m, a, name, stamp, ts))

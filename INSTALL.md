@@ -50,8 +50,21 @@ in `#flux` and watch it react within 15 seconds.
 
 ## 5. Optional modules
 
-- **Drive attachments**: a Google Cloud project with the Drive API, an OAuth client, a one-time
-  consent run that writes `drive-token.json`; a shared drive or folder id in `flux.toml`.
+- **Drive attachments** (recommended: without it the note links Discord's copy of a photo or PDF, which
+  Discord expires after some weeks; the extracted text is kept either way).
+  1. Google Cloud Console: create a project (or reuse one), enable the **Google Drive API**, then
+     APIs & Services > Credentials > Create credentials > **OAuth client ID** > type **Desktop app**;
+     download the client secret JSON. If the consent screen is in "Testing", add your own Google
+     account as a test user.
+  2. On a machine with a browser: `pip install 'flux-brain[drive]'`, then
+     `flux-drive-auth client_secret.json`. It opens the consent page (scope `drive.file` only: files
+     this app creates) and writes `drive-token.json` (mode 600) into `FLUX_HOME`. Copy that file to
+     the server's `/var/lib/flux/` if you ran it elsewhere, owner `flux`, mode 600.
+  3. Create the destination folder in Drive (My Drive or a shared drive) and put its id (the last part
+     of its URL) in `flux.toml` `[drive] folder_id`; for a shared drive also `drive_id` (the id in the
+     shared drive's URL), else leave `drive_id` empty. Set `[modules] drive = true`.
+  4. Restart the unit. Post a photo in `#flux`: the capture's `## Attachments` line links the Drive
+     file. A missing token or folder id fails the tick with a one-line message naming the fix.
 - **Memory mirror**: only meaningful if you use Claude Code with a file-based memory store; documented
   separately (v2).
 - **Google Keep**: unofficial API (`gkeepapi`) with a full-account master token. Experimental; read
