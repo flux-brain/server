@@ -36,8 +36,17 @@ sudo cp flux.env.example  /var/lib/flux/flux.env    # then edit; chmod 600
 sudo cp systemd/*.service /etc/systemd/system/ && sudo systemctl enable --now flux-relay
 ```
 
-The relay logs to `$FLUX_HOME/logs/relay.log`. First lines to expect: `#flux found`, then
-`#flux-log found`; post a message in `#flux` and watch it react within 15 seconds.
+`pip install` puts three commands in the venv: `flux-relay` (one tick), `flux-relay-loop` (what the unit
+runs) and `flux-ask`. Before enabling the unit, run one tick by hand as the `flux` user:
+
+```
+sudo -u flux FLUX_HOME=/var/lib/flux /var/lib/flux/venv/bin/flux-relay
+```
+
+A readable one-line error means a missing setting (for example `no GitHub token: set GITHUB_TOKEN`);
+a `401` from Discord means the bot token; silence means the tick worked. The relay logs to
+`$FLUX_HOME/logs/relay.log`. First lines to expect: `#flux found`, then `#flux-log found`; post a message
+in `#flux` and watch it react within 15 seconds.
 
 ## 5. Optional modules
 

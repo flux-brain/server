@@ -13,6 +13,7 @@ this the relay fetched the whole tree every 15 s and the Keep daemon every 30 s.
 import base64
 import json
 import os
+import shutil
 import subprocess
 import urllib.parse
 
@@ -37,6 +38,9 @@ def gh_token(user=None):
     INSTALL.md), else the gh CLI's store for `user`. Never written to disk or logs by any Flux script."""
     if CFG.github_token:
         return CFG.github_token
+    if shutil.which("gh") is None:
+        raise SystemExit(f"flux: no GitHub token: set GITHUB_TOKEN in {CFG.home}/flux.env (a fine-grained token limited to "
+                         "the vault repository, INSTALL.md step 2), or install and log in the gh CLI")
     cmd = ["gh", "auth", "token"] + (["-u", user] if user else [])
     return subprocess.run(cmd, check=True, capture_output=True, text=True).stdout.strip()
 
