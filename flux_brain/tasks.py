@@ -200,10 +200,21 @@ class TasksApi:
         return self._h
 
     def call(self, method, path, **kw):
-        r = self.s.request(method, TASKS + path, headers=self.headers(), timeout=30, **kw)
-        if r.status_code == 401:       # access token expired mid-run: refresh once
-            self._h = None
+        """One API call. 401 -> refresh the access token once. 403/429 with a quota or rate reason (the first tick
+        of a vault with many projects creates lists and tasks faster than the per-minute quota; seen live
+        2026-09-22) -> wait and retry, 5 s, 10 s, 20 s, 40 s, then give up and let the tick fail."""
+        for attempt in range(5):
             r = self.s.request(method, TASKS + path, headers=self.headers(), timeout=30, **kw)
+            if r.status_code == 401 and attempt == 0:
+                self._h = None
+                continue
+            if r.status_code in (403, 429) and attempt < 4 and ("uota" in r.text or "ate" in r.text or r.status_code == 429):
+                wait = 5 * 2 ** attempt
+                log(f"tasks: HTTP {r.status_code} on {method} {path.split('?')[0]}, waiting {wait}s")
+                time.sleep(wait)
+                continue
+            r.raise_for_status()
+            return r.json() if r.content else {}
         r.raise_for_status()
         return r.json() if r.content else {}
 
@@ -381,6 +392,7 @@ class Sync:
         inbox = {e["path"] for e in tree if e["path"].startswith("inbox/")}
         for slug, entry in sorted(pages.items()):
             self.project(slug, entry, inbox)
+            save_json(STATE_FILE, self.st)   # per project: a failure later in the tick keeps what was rendered
         for slug in [s for s in self.st["projects"] if s not in pages]:
             p = self.st["projects"][slug]
             if p.get("list_id") and not p.get("gone"):
