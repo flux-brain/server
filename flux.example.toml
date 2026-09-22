@@ -42,8 +42,8 @@ folder_id = ""
 token_file = "drive-token.json"    # relative to paths.home
 
 [gmail]                            # when modules.gmail = true
-label = "📁 Vault"
-filed_label = "📁 Vault/Filed"
+label = "📁 Flux"
+filed_label = "📁 Flux/Filed"
 token_file = "gmail-token.json"
 
 [tasks]                            # when modules.tasks = true
