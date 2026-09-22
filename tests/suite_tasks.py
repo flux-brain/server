@@ -141,4 +141,21 @@ s.api.add(lid, "token " + "AKIA" + "ABCDEFGHIJKLMNOP" + " for the deploy")   # a
 s.tick(); s.st["projects"]["project-x"]["unsettled"]["since"] -= tk.SETTLE + 1; s.tick()
 check("secret redacted in the capture", "[REDACTED]" in s.gh.puts[-1][1] and "AKIA" not in s.gh.puts[-1][1])
 
+# 11 a 403 with a quota reason is retried with backoff (sleep stubbed), then succeeds
+class R:
+    def __init__(self, code, text="", js=None): self.status_code, self.text, self._js, self.content, self.ok = code, text, js or {}, b"1", code < 400
+    def json(self): return self._js
+    def raise_for_status(self):
+        if self.status_code >= 400: raise RuntimeError(self.status_code)
+class QuotaSession:
+    def __init__(self): self.n = 0
+    def post(self, url, **kw): return R(200, js={"access_token": "at"})
+    def request(self, method, url, **kw):
+        self.n += 1
+        return R(403, text='{"error": {"errors": [{"reason": "rateLimitExceeded"}]}}') if self.n <= 2 else R(200, js={"items": []})
+waits = []; tk.time.sleep = lambda n: waits.append(n)
+import json as _j, pathlib as _p; _tok = _p.Path(CFG.home, "drive-token.json"); _tok.write_text(_j.dumps({"client_id": "c", "client_secret": "s", "refresh_token": "r"}))
+api = tk.TasksApi(QuotaSession(), token_path=str(_tok))
+check("quota 403 retried with backoff", api.tasks("L") == [] and waits == [5, 10])
+
 print(f"FAILS: {fails}"); sys.exit(1 if fails else 0)
