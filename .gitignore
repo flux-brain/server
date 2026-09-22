@@ -9,4 +9,5 @@ flux.toml
 flux.env
 drive-token.json
 gmail-token.json
+tasks-token.json
 .pytest_cache/
