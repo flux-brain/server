@@ -1,0 +1,22 @@
+[Unit]
+Description=Flux Tasks module: Google Tasks list per active project page
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=flux
+Group=flux
+Environment=FLUX_HOME=/var/lib/flux
+ExecStart=/var/lib/flux/venv/bin/flux-tasks
+StandardOutput=append:/var/lib/flux/logs/tasks.log
+StandardError=inherit
+Restart=always
+RestartSec=30
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/flux
+PrivateTmp=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

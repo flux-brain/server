@@ -37,7 +37,7 @@ sudo cp systemd/*.service /etc/systemd/system/ && sudo systemctl enable --now fl
 ```
 
 `pip install` puts these commands in the venv: `flux-relay` (one tick), `flux-relay-loop` (what the unit
-runs), `flux-ask`, and the module commands `flux-gmail`, `flux-drive-auth`, `flux-gmail-auth`. Before enabling the unit, run one tick by hand as the `flux` user:
+runs), `flux-ask`, and the module commands `flux-gmail`, `flux-tasks`, `flux-drive-auth`, `flux-gmail-auth`, `flux-tasks-auth`. Before enabling the unit, run one tick by hand as the `flux` user:
 
 ```
 sudo -u flux FLUX_HOME=/var/lib/flux /var/lib/flux/venv/bin/flux-relay
@@ -67,8 +67,22 @@ in `#flux` and watch it react within 15 seconds.
      file. A missing token or folder id fails the tick with a one-line message naming the fix.
 - **Memory mirror**: only meaningful if you use Claude Code with a file-based memory store; documented
   separately (v2).
-- **Google Keep**: unofficial API (`gkeepapi`) with a full-account master token. Experimental; read
-  the warning in the module doc before turning it on.
+- **Google Tasks** (the checklist view of your projects): one Tasks list per active project page,
+  one task per action; ticks, additions, rewords and deletions on the phone come back as captures
+  once the list has been left alone for 45 seconds, and page changes flow to the list within a minute.
+  1. Enable the **Google Tasks API** on the Cloud project; reuse the Desktop OAuth client.
+  2. On a machine with a browser: `flux-tasks-auth client_secret.json` (scope `tasks` only). Copy
+     `tasks-token.json` to the server if needed, owner `flux`, mode 600.
+  3. `flux.toml`: `[modules] tasks = true`; optionally `[tasks] prefix`, `tick_s`, `settle_s`.
+  4. `sudo cp systemd/flux-tasks.service /etc/systemd/system/ && sudo systemctl enable --now flux-tasks`
+     (long-running; log in `$FLUX_HOME/logs/tasks.log`). One tick by hand first:
+     `sudo -u flux FLUX_HOME=/var/lib/flux TASKS_ONCE=1 /var/lib/flux/venv/bin/flux-tasks`.
+  Each action's `^id` is written into the task's notes (a small grey line under the title); that is what
+  keeps a task attached to its action through rewords and what rebuilds the mapping if the state file is
+  lost. Quota: about (1 + active projects) API calls per tick; the default 60 s tick keeps 25 projects
+  under the 50,000 calls a day. Paused and done projects are renamed once and not polled.
+- **Google Keep**: not shipped. Keep has no public API for personal accounts; the only route is an
+  unofficial library with a full-account master token, which is why this project uses Tasks instead.
 - **Gmail feed**: label a conversation in Gmail and it is filed as one capture (messages oldest first,
   attachments through the same converters as Discord ones), then relabelled `<label>/Filed`.
   1. Enable the **Gmail API** on the same Cloud project as Drive; reuse the Desktop OAuth client.

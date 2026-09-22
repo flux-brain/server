@@ -13,6 +13,8 @@ What it does, every 15 seconds:
   API trigger and posts the run link, so you can watch Claude work.
 - **Outbound:** answers, drafts, questions (with an @mention) and digests are posted to `#flux`; run
   summaries and other background notices go to the muted `#flux-log`.
+- **Google Tasks (module):** every active project page is a Tasks list you can tick and edit on your phone;
+  edits come back as captures, page changes go out to the list.
 - **`flux-ask`:** lets a Claude Code session ask you a question in `#flux` without touching Discord.
 
 ## Install
@@ -35,7 +37,8 @@ those two files; the code contains none.
 | Attachment text extraction | core | poppler, tesseract, optional faster-whisper |
 | Drive attachments | shipped (`flux-drive-auth`) | Google Cloud OAuth client, a folder |
 | Gmail feed | shipped (`flux-gmail`, `flux-gmail-auth`) | Gmail API, scope gmail.modify |
-| Google Keep checklists | not shipped | unofficial API; experimental |
+| Google Tasks checklists | shipped (`flux-tasks`, `flux-tasks-auth`) | Tasks API, scope tasks |
+| Google Keep checklists | not shipped | no public API; replaced by Tasks |
 | Memory mirror + reconcile | not shipped | Claude Code file-based memory store |
 
 ## Tests

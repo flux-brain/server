@@ -34,6 +34,7 @@ drive = false                      # attachments to cloud storage (Google Drive 
 memory = false                     # memory mirror + page/memory reconcile
 keep = false                       # Google Keep checklists (experimental: unofficial API)
 gmail = false                      # Gmail label feed
+tasks = false                      # Google Tasks list per active project (official API)
 
 [drive]                            # when modules.drive = true
 drive_id = ""
@@ -44,6 +45,12 @@ token_file = "drive-token.json"    # relative to paths.home
 label = "📁 Vault"
 filed_label = "📁 Vault/Filed"
 token_file = "gmail-token.json"
+
+[tasks]                            # when modules.tasks = true
+token_file = "tasks-token.json"
+prefix = "📁 "                      # list title prefix
+tick_s = 60                        # seconds between ticks; (1 + active projects) calls per tick, 50k/day quota
+settle_s = 45                      # a list must be unchanged this long before its edits are filed
 
 [monitoring]                       # optional; empty = no pings, no alerts
 ops_webhook_env = "OPS_WEBHOOK_URL"   # name of the env var holding a Discord webhook for failure alerts
