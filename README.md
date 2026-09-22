@@ -40,7 +40,7 @@ those two files; the code contains none.
 
 ## Tests
 
-`PYTHON=.venv/bin/python tests/run_all.sh`. Offline: every suite points `FLUX_HOME` at a fresh temporary
+`pytest` (after `pip install -e ".[dev]"`), or `PYTHON=.venv/bin/python tests/run_all.sh` without pytest. Offline: every suite points `FLUX_HOME` at a fresh temporary
 directory before importing the package, so no test can touch a live state file. Run them before
 installing any edit; the loop service picks up file changes within 15 seconds.
 

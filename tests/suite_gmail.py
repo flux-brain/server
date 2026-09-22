@@ -2,7 +2,7 @@
 sure its attachments are processed"). No Gmail, Drive or GitHub: the module is imported and only pure functions plus
 the retry wrapper (with a faked converter) are exercised.
 
-  python tests/test_gmail.py
+  python tests/suite_gmail.py
 Exit 1 on any FAIL.
 """
 import email
