@@ -61,7 +61,7 @@ def relay(state, msgs, fail_urls):
     r.puts, r.posts = [], []
     r.put_file = lambda path, data, msg: r.puts.append((path, data.decode()))
     r.drive_upload = lambda name, data, mime: "https://drive/x"
-    m.CFG.mod_drive = True  # these cases exercise the Drive path; test_drive.py covers the module-off line
+    m.CFG.mod_drive = True  # these cases exercise the Drive path; suite_drive.py covers the module-off line
     r.post = lambda channel, content, **kw: r.posts.append((content, kw))
     return r
 
