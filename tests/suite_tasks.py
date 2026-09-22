@@ -28,9 +28,10 @@ class FakeTasks:
     def rename_list(self, lid, title):
         self.store[lid]["title"] = title; self.calls.append(("rename_list", title)); return {}
     def tasks(self, lid): return [dict(t) for t in self.store[lid]["tasks"]]
-    def create_task(self, lid, title, notes, done):
+    def create_task(self, lid, title, notes, done, previous=None):
         t = {"id": self._id("T"), "title": title, "notes": notes, "status": "completed" if done else "needsAction"}
-        self.store[lid]["tasks"].append(t); self.calls.append(("create_task", title)); return t
+        ts = self.store[lid]["tasks"]; idx = ([x["id"] for x in ts].index(previous) + 1) if previous else 0   # Google: top unless previous
+        ts.insert(idx, t); self.calls.append(("create_task", title, previous)); return t
     def patch_task(self, lid, tid, **f):
         t = next(x for x in self.store[lid]["tasks"] if x["id"] == tid); t.update({k: v for k, v in f.items() if v is not None})
         self.calls.append(("patch_task", tid, f)); return t
@@ -89,6 +90,7 @@ s = make({"project-x": PAGE}); s.tick()
 lid = s.st["projects"]["project-x"]["list_id"]; L = s.api.store[lid]
 check("render: list + tasks", L["title"] == "📁 Project X" and [t["notes"] for t in L["tasks"]] == ["^a1b2", "^c3d4", "^e5f6"]
       and L["tasks"][1]["status"] == "completed" and len(s.st["projects"]["project-x"]["snapshot"]) == 3)
+check("first render: tasks in page order with no move calls", [t["notes"] for t in L["tasks"]] == ["^a1b2", "^c3d4", "^e5f6"] and not any(c[0] == "move_task" for c in s.api.calls))
 n_calls = len(s.api.calls)
 # 3 second tick with nothing changed: no API writes
 s.tick(); check("idle tick writes nothing", len(s.api.calls) == n_calls)
