@@ -27,6 +27,8 @@ drive = ["google-auth-oauthlib>=1.2"]     # flux-drive-auth only; uploads use pl
 [project.scripts]
 flux-relay = "flux_brain.relay:main"
 flux-drive-auth = "flux_brain.lib.drive:auth_main"   # one-time Drive consent (needs the `drive` extra)
+flux-gmail = "flux_brain.gmail:main"                 # the Gmail module, one pass (run by flux-gmail.timer)
+flux-gmail-auth = "flux_brain.gmail:auth_main"       # one-time Gmail consent (needs the `drive` extra)
 
 [tool.setuptools]
 script-files = ["bin/flux-relay-loop", "bin/flux-ask"]   # shell helpers installed next to flux-relay

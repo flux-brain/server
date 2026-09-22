@@ -36,8 +36,8 @@ sudo cp flux.env.example  /var/lib/flux/flux.env    # then edit; chmod 600
 sudo cp systemd/*.service /etc/systemd/system/ && sudo systemctl enable --now flux-relay
 ```
 
-`pip install` puts three commands in the venv: `flux-relay` (one tick), `flux-relay-loop` (what the unit
-runs) and `flux-ask`. Before enabling the unit, run one tick by hand as the `flux` user:
+`pip install` puts these commands in the venv: `flux-relay` (one tick), `flux-relay-loop` (what the unit
+runs), `flux-ask`, and the module commands `flux-gmail`, `flux-drive-auth`, `flux-gmail-auth`. Before enabling the unit, run one tick by hand as the `flux` user:
 
 ```
 sudo -u flux FLUX_HOME=/var/lib/flux /var/lib/flux/venv/bin/flux-relay
@@ -69,7 +69,19 @@ in `#flux` and watch it react within 15 seconds.
   separately (v2).
 - **Google Keep**: unofficial API (`gkeepapi`) with a full-account master token. Experimental; read
   the warning in the module doc before turning it on.
-- **Gmail feed**: Gmail API with a read + labels scope.
+- **Gmail feed**: label a conversation in Gmail and it is filed as one capture (messages oldest first,
+  attachments through the same converters as Discord ones), then relabelled `<label>/Filed`.
+  1. Enable the **Gmail API** on the same Cloud project as Drive; reuse the Desktop OAuth client.
+  2. On a machine with a browser: `flux-gmail-auth client_secret.json` (scope `gmail.modify`: read and
+     label changes, it cannot send). It writes `gmail-token.json` (mode 600) into `FLUX_HOME`; copy it to
+     the server if needed, owner `flux`, mode 600.
+  3. In Gmail, create the label named in `flux.toml` `[gmail] label` (default `📁 Vault`); the `/Filed`
+     sub-label is created by the module. Set `[modules] gmail = true`.
+  4. `sudo cp systemd/flux-gmail.* /etc/systemd/system/ && sudo systemctl enable --now flux-gmail.timer`
+     (one pass a minute; log in `$FLUX_HOME/logs/gmail.log`). Test one pass by hand first:
+     `sudo -u flux FLUX_HOME=/var/lib/flux /var/lib/flux/venv/bin/flux-gmail`.
+  Without the Drive module the original email and its attachments stay in Gmail (the capture links the
+  conversation); with it they are also stored in the Drive folder.
 
 ## 6. Tests
 
