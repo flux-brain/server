@@ -22,10 +22,11 @@ dependencies = [
 
 [project.optional-dependencies]
 audio = ["faster-whisper>=1.0"]        # voice memo transcription (downloads the "small" model, ~460 MB, on first use)
-drive = ["google-api-python-client>=2.100", "google-auth-oauthlib>=1.2"]   # attachments to Google Drive (module)
+drive = ["google-auth-oauthlib>=1.2"]     # flux-drive-auth only; uploads use plain requests
 
 [project.scripts]
 flux-relay = "flux_brain.relay:main"
+flux-drive-auth = "flux_brain.lib.drive:auth_main"   # one-time Drive consent (needs the `drive` extra)
 
 [tool.setuptools]
 script-files = ["bin/flux-relay-loop", "bin/flux-ask"]   # shell helpers installed next to flux-relay
