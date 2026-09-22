@@ -93,7 +93,7 @@ in `#flux` and watch it react within 15 seconds.
   2. On a machine with a browser: `flux-gmail-auth client_secret.json` (scope `gmail.modify`: read and
      label changes, it cannot send). It writes `gmail-token.json` (mode 600) into `FLUX_HOME`; copy it to
      the server if needed, owner `flux`, mode 600.
-  3. In Gmail, create the label named in `flux.toml` `[gmail] label` (default `📁 Vault`); the `/Filed`
+  3. In Gmail, create the label named in `flux.toml` `[gmail] label` (default `📁 Flux`); the `/Filed`
      sub-label is created by the module. Set `[modules] gmail = true`.
   4. `sudo cp systemd/flux-gmail.* /etc/systemd/system/ && sudo systemctl enable --now flux-gmail.timer`
      (one pass a minute; log in `$FLUX_HOME/logs/gmail.log`). Test one pass by hand first:
