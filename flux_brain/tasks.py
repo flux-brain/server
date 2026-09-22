@@ -243,8 +243,11 @@ class TasksApi:
             if not token:
                 return [t for t in out if not t.get("deleted")]
 
-    def create_task(self, list_id, title, notes, done):
-        return self.call("POST", f"/lists/{list_id}/tasks", json={
+    def create_task(self, list_id, title, notes, done, previous=None):
+        """Create a task. Google inserts at the TOP unless `previous` names the task to insert after, so the render
+        passes the previous task in page order (seen live 2026-09-22: without it every first render reordered
+        the whole list with one move call per task)."""
+        return self.call("POST", f"/lists/{list_id}/tasks", params={"previous": previous} if previous else {}, json={
             "title": title, "notes": notes, "status": "completed" if done else "needsAction"})
 
     def patch_task(self, list_id, tid, **fields):
@@ -299,7 +302,7 @@ class Sync:
         by_aid = {v["aid"]: tid for tid, v in cur.items() if v["aid"]}
         by_text = {norm(v["t"]): tid for tid, v in cur.items() if not v["aid"]}
         pending_new = {norm(v["text"]) for v in p.get("pending", {}).values() if v["kind"] in ("new", "done-new")}
-        used, order = set(), []
+        used, order, prev = set(), [], None
         for text, done, aid in page["actions"]:
             tid = by_aid.get(aid) if aid else None
             if not tid and norm(text) in by_text:
@@ -317,13 +320,15 @@ class Sync:
                 if fields:
                     self.api.patch_task(lid, tid, **fields)
             else:
-                tid = self.api.create_task(lid, text, f"^{aid}" if aid else "", done)["id"]
+                tid = self.api.create_task(lid, text, f"^{aid}" if aid else "", done, previous=prev)["id"]
             used.add(tid)
             order.append(tid)
+            prev = tid
         for tid, v in cur.items():
             if tid not in used and norm(v["t"]) not in pending_new:
                 self.api.delete_task(lid, tid)   # gone from the page (the page is the source of truth)
-        if [t for t in cur if t in used] != order:   # only touch positions when the order differs
+        # Reorder only when the EXISTING tasks are out of page order (new ones were inserted in place above).
+        if [t for t in cur if t in used] != [t for t in order if t in cur]:
             prev = None
             for tid in order:
                 self.api.move_task(lid, tid, previous=prev)
