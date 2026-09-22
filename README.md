@@ -44,6 +44,10 @@ those two files; the code contains none.
 directory before importing the package, so no test can touch a live state file. Run them before
 installing any edit; the loop service picks up file changes within 15 seconds.
 
+`tests/clean-install.sh` is the install test: it follows INSTALL.md on a fresh Ubuntu 24.04 container against the
+published repository and ends on the expected Discord 401 for placeholder secrets. Run it after any change to
+`pyproject.toml`, `bin/`, `systemd/` or INSTALL.md (command in the script header).
+
 ## Privacy by design
 
 Flux never reads your private conversations with other people (messaging apps). The relay only reads the
