@@ -148,6 +148,15 @@ def resolve_pending(pending, page, inbox, t):
     return keep
 
 
+EMAIL_LINK = re.compile(r"mail\.google\.com/mail/(?:u/\d+/)?#[a-z]+/([0-9a-fA-F]{12,})")
+
+
+def email_id(link):
+    """Gmail message (or legacy thread) id from a task's email link, or None."""
+    m = EMAIL_LINK.search(link or "")
+    return m.group(1) if m else None
+
+
 def stamp(t=None):
     return datetime.fromtimestamp(t or time.time(), timezone.utc)
 
@@ -165,7 +174,8 @@ def checklist_capture(slug, page, list_id, events, owner):
             redacted |= r2
             lines.append(f"- reworded{tag}: {old} → {text}")
         else:
-            lines.append(f"- {words[e['kind']]}{tag}: {text}")
+            extra = f" (email filed as {e['emailed']})" if e.get("emailed") else ""
+            lines.append(f"- {words[e['kind']]}{tag}: {text}{extra}")
     body = [
         "---", "source: tasks", "kind: project-checklist", f"project: {slug}",
         f"page: wiki/projects/{slug}.md", f"tasks_list: {list_id}",
@@ -265,7 +275,9 @@ def snapshot(tasks):
     out = {}
     for t in tasks:
         aid = split_action_id(" " + (t.get("notes") or "").strip())[1]   # notes hold "^a1b2"
-        out[t["id"]] = {"t": (t.get("title") or "").strip(), "c": t.get("status") == "completed", "aid": aid}
+        email = next((l.get("link") for l in t.get("links") or [] if l.get("type") == "email"), None)
+        out[t["id"]] = {"t": (t.get("title") or "").strip(), "c": t.get("status") == "completed", "aid": aid,
+                        **({"email": email} if email else {})}
     return out
 
 
@@ -369,6 +381,7 @@ class Sync:
                     return   # the owner may still be editing
                 if time.time() - u["since"] < SETTLE:
                     return
+                self.hand_off_emails(slug, cur, events, p)
                 path = f"inbox/{stamp():%Y-%m-%dT%H%M%SZ}-tasks-{slug}.md"
                 self.gh.put_file(path, checklist_capture(slug, page, lid, events, CFG.owner_name).encode(),
                                  f"tasks: {len(events)} list edit(s) on {slug}")
@@ -390,6 +403,42 @@ class Sync:
             self.render(slug, p, page, cur)
             log(f"{slug}: rendered list {lid} ({len(page['actions'])} actions, {len(p['pending'])} pending)")
         p.update(page=page, page_sha=entry["sha"], title=page["title"])
+
+    def hand_off_emails(self, slug, cur, events, p):
+        """A new task the owner created by dragging an email into the project's list carries the email's link: file
+        that conversation under the project through the Gmail module (attachments included), once per task
+        (state `emailed` {task id: capture path}), and name the capture in the checklist line. The task stays in the
+        list as an action (a product decision: the owner dragged it there because something is to be done). Needs the Gmail module; without it the
+        link is logged and the task is filed as a plain new action."""
+        done = p.setdefault("emailed", {})
+        for e in events:
+            if e["kind"] not in ("new", "done-new"):
+                continue
+            link = cur.get(e["tid"], {}).get("email")
+            mid = email_id(link)
+            if not mid:
+                continue
+            if e["tid"] in done:
+                e["emailed"] = done[e["tid"]]
+                continue
+            if not CFG.mod_gmail:
+                log(f"{slug}: task {e['tid']} carries an email link but the Gmail module is off; filed as a plain action")
+                continue
+            try:
+                path = self.gmail().file_message_id(mid, project=slug, via="tasks")
+            except Exception as exc:  # noqa: BLE001 - the checklist capture still goes out; the email can be re-dragged
+                log(f"{slug}: email hand-off for task {e['tid']} failed ({exc.__class__.__name__}); action filed without it")
+                continue
+            done[e["tid"]] = path
+            e["emailed"] = path
+            log(f"{slug}: email {mid} filed under the project as {path} (from task {e['tid']})")
+
+    def gmail(self):
+        """The Gmail module's relay, built on first use (its constructor refreshes the Gmail token)."""
+        if not hasattr(self, "_gmail"):
+            from .gmail import GmailRelay, load_state as gmail_state
+            self._gmail = GmailRelay(gmail_state())
+        return self._gmail
 
     def tick(self):
         tree = self.gh.tree()

@@ -14,7 +14,8 @@ What it does, every 15 seconds:
 - **Outbound:** answers, drafts, questions (with an @mention) and digests are posted to `#flux`; run
   summaries and other background notices go to the muted `#flux-log`.
 - **Google Tasks (module):** every active project page is a Tasks list you can tick and edit on your phone;
-  edits come back as captures, page changes go out to the list.
+  edits come back as captures, page changes go out to the list. Drag an email into a project's list and it is
+  filed under that project with its attachments.
 - **`flux-ask`:** lets a Claude Code session ask you a question in `#flux` without touching Discord.
 
 ## Install

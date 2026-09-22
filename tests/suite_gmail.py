@@ -119,7 +119,7 @@ def make(filed, pages, file_thread):
 
 
 calls_api.clear()
-r = make({"old1": 1}, [{"id": "old1", "threadId": "T0"}, {"id": "new1", "threadId": "T1"}], lambda t, ids: list(ids))
+r = make({"old1": 1}, [{"id": "old1", "threadId": "T0"}, {"id": "new1", "threadId": "T1"}], lambda t, ids: (list(ids), "inbox/x.md"))  # file_thread returns (ids, path) since the Tasks hand-off
 n = r.run()
 mods = [c[2] for c in calls_api if c[1] == "/messages/batchModify"]
 check("stale filed message is relabelled to Filed first", mods and mods[0]["ids"] == ["old1"]
@@ -131,7 +131,7 @@ check("stale message is not refiled", all(x["ids"] != ["old1"] for x in mods[1:]
 def bad_then_good(t, ids):
     if t == "TA":
         raise RuntimeError("Drive 403")
-    return list(ids)
+    return list(ids), "inbox/x.md"
 
 
 pages = [{"id": "a1", "threadId": "TA"}, {"id": "b1", "threadId": "TB"}]
@@ -146,6 +146,21 @@ check("run 3: stub filed, thread relabelled, counter cleared, NOT marked filed (
       and any(c[2] and c[2].get("ids") == ["a1"] for c in calls_api if c[1] == "/messages/batchModify"))
 check("stub names the error and the Gmail link", "RuntimeError: Drive 403" in puts[0][1] and "#all/TA" in puts[0][1])
 check("give-up alerts Discord once", len(notified) == 1 and "gave up" in notified[0])
+
+# hand-off from Tasks: file_message_id resolves the thread, files with project/via frontmatter, marks ids filed
+class FakeRelay(gr.GmailRelay):
+    def __init__(self): self.st = {"filed": {}}; self.calls = []; self.filed_args = None
+    def api(self, method, path, **kw):
+        self.calls.append(path)
+        if path.startswith("/messages/"): return {"id": path.split("/")[2], "threadId": "T9"}
+        if path.startswith("/threads/"): return {"messages": [{"id": "m1"}, {"id": "m2"}]}
+        raise AssertionError(path)
+    def file_thread(self, thread_id, msg_ids, project=None, via=None):
+        self.filed_args = (thread_id, msg_ids, project, via); return msg_ids, "inbox/x-gmail-m2.md"
+gr.save_state = lambda st: None
+fr = FakeRelay(); path = fr.file_message_id("abc123", project="project-x")
+check("hand-off: thread resolved from the message id and filed under the project",
+      path == "inbox/x-gmail-m2.md" and fr.filed_args == ("T9", ["m1", "m2"], "project-x", "tasks") and set(fr.st["filed"]) == {"m1", "m2"})
 
 print("FAILS:", fails)
 sys.exit(1 if fails else 0)

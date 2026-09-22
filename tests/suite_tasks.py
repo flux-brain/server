@@ -160,4 +160,27 @@ import json as _j, pathlib as _p; _tok = _p.Path(CFG.home, "drive-token.json"); 
 api = tk.TasksApi(QuotaSession(), token_path=str(_tok))
 check("quota 403 retried with backoff", api.tasks("L") == [] and waits == [5, 10])
 
+# 12 an email dragged into the list: handed to the Gmail module once, capture line names the filed email, task stays
+class FakeGmail:
+    def __init__(self): self.calls = []
+    def file_message_id(self, mid, project, via="tasks"):
+        self.calls.append((mid, project, via)); return f"inbox/2026-09-22T1600Z-gmail-{mid}.md"
+s = make({"project-x": PAGE3}); s.tick()
+lid = s.st["projects"]["project-x"]["list_id"]; g = FakeGmail(); s._gmail = g; CFG.mod_gmail = True
+tid_e = s.api.add(lid, "Re: invoice 4471")
+next(x for x in s.api.store[lid]["tasks"] if x["id"] == tid_e)["links"] = [{"type": "email", "description": "Re: invoice 4471", "link": "https://mail.google.com/mail/#all/18f3a2b4c5d6e7f8"}]
+s.tick(); s.st["projects"]["project-x"]["unsettled"]["since"] -= tk.SETTLE + 1; s.tick()
+body = s.gh.puts[-1][1]
+check("email link parsed", tk.email_id("https://mail.google.com/mail/u/0/#inbox/18f3a2b4c5d6e7f8") == "18f3a2b4c5d6e7f8" and tk.email_id("https://example.com/x") is None)
+check("email handed to the Gmail module with the project", g.calls == [("18f3a2b4c5d6e7f8", "project-x", "tasks")])
+check("checklist line names the filed email", "- new action: Re: invoice 4471 (email filed as inbox/2026-09-22T1600Z-gmail-18f3a2b4c5d6e7f8.md)" in body)
+check("task kept in the list", any(x["id"] == tid_e for x in s.api.store[lid]["tasks"]))
+check("hand-off recorded once", s.st["projects"]["project-x"]["emailed"] == {tid_e: "inbox/2026-09-22T1600Z-gmail-18f3a2b4c5d6e7f8.md"})
+# 13 gmail module off: plain action, no hand-off
+CFG.mod_gmail = False; tid_f = s.api.add(lid, "Fwd: contract")
+next(x for x in s.api.store[lid]["tasks"] if x["id"] == tid_f)["links"] = [{"type": "email", "link": "https://mail.google.com/mail/#all/18f3a2b4c5d6e7f9"}]
+s.tick(); s.st["projects"]["project-x"]["unsettled"]["since"] -= tk.SETTLE + 1; s.tick()
+check("gmail off: plain new action, no hand-off", "- new action: Fwd: contract\n" in s.gh.puts[-1][1] and len(g.calls) == 1)
+CFG.mod_gmail = True
+
 print(f"FAILS: {fails}"); sys.exit(1 if fails else 0)

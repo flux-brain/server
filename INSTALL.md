@@ -77,6 +77,10 @@ in `#flux` and watch it react within 15 seconds.
   4. `sudo cp systemd/flux-tasks.service /etc/systemd/system/ && sudo systemctl enable --now flux-tasks`
      (long-running; log in `$FLUX_HOME/logs/tasks.log`). One tick by hand first:
      `sudo -u flux FLUX_HOME=/var/lib/flux TASKS_ONCE=1 /var/lib/flux/venv/bin/flux-tasks`.
+  **Emails into a project:** drag an email from Gmail into a project's list (Gmail's Tasks side panel does
+  this and keeps a link to the email). The task stays in the list as an action, and the whole conversation is
+  filed under that project with its attachments, through the Gmail module (which must be on). The email must
+  be in the same Google account as the Tasks token, and dragged into a `📁` project list, not "My Tasks".
   Each action's `^id` is written into the task's notes (a small grey line under the title); that is what
   keeps a task attached to its action through rewords and what rebuilds the mapping if the state file is
   lost. Quota: about (1 + active projects) API calls per tick; the default 60 s tick keeps 25 projects
