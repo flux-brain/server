@@ -43,7 +43,7 @@ su -s /bin/bash flux -c 'cd /var/lib/flux && FLUX_HOME=/var/lib/flux timeout 20 
 test -s /var/lib/flux/logs/relay.log && ok "logs/relay.log written: $(tail -n 1 /var/lib/flux/logs/relay.log | cut -c1-100)" || bad "no relay.log"
 
 step "7. test suite in the venv (needs cramjam etc. from the install)"
-su -s /bin/bash flux -c 'cd /var/lib/flux/src && PYTHON=/var/lib/flux/venv/bin/python tests/run_all.sh' && ok "tests pass in the venv" || bad "tests"
+su -s /bin/bash flux -c 'cd /var/lib/flux/src && PYTHON=/var/lib/flux/venv/bin/python tests/run_all.sh && /var/lib/flux/venv/bin/pip install -q "/var/lib/flux/src[dev]" && /var/lib/flux/venv/bin/python -m pytest -q' && ok "tests pass in the venv (run_all.sh, then pytest)" || bad "tests"
 
 step "8. flux-ask guards with the installed package"
 su -s /bin/bash flux -c 'cd /var/lib/flux && PATH=/var/lib/flux/venv/bin:$PATH FLUX_HOME=/var/lib/flux bash /var/lib/flux/venv/bin/flux-ask "bad slug" x; echo "exit=$?"' 2>&1 | tail -2

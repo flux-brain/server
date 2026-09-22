@@ -22,7 +22,8 @@ dependencies = [
 
 [project.optional-dependencies]
 audio = ["faster-whisper>=1.0"]        # voice memo transcription (downloads the "small" model, ~460 MB, on first use)
-drive = ["google-auth-oauthlib>=1.2"]     # flux-drive-auth only; uploads use plain requests
+drive = ["google-auth-oauthlib>=1.2"]     # flux-drive-auth / flux-gmail-auth only; uploads use plain requests
+dev = ["pytest>=8"]
 
 [project.scripts]
 flux-relay = "flux_brain.relay:main"
@@ -35,3 +36,7 @@ script-files = ["bin/flux-relay-loop", "bin/flux-ask"]   # shell helpers install
 
 [tool.setuptools.packages.find]
 include = ["flux_brain*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
