@@ -5,7 +5,7 @@
 set -uo pipefail
 cd "$(dirname "$0")"
 PY="${PYTHON:-python3}"; rc=0
-for t in test_secrets.py test_relay_posts.py test_relay_inbound.py test_iwork.py test_drive.py; do
+for t in test_secrets.py test_relay_posts.py test_relay_inbound.py test_iwork.py test_drive.py test_gmail.py; do
   if out=$("$PY" "$t" 2>&1); then echo "PASS $t: $(echo "$out" | tail -n 1)"; else echo "FAIL $t"; echo "$out" | tail -n 5; rc=1; fi
 done
 exit $rc

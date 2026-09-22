@@ -74,6 +74,7 @@ class Config:
         self.drive_token_file = str(self.home / g("drive", "token_file", "drive-token.json"))
         self.gmail_label = g("gmail", "label", "📁 Vault")
         self.gmail_filed_label = g("gmail", "filed_label", "📁 Vault/Filed")
+        self.gmail_token_file = str(self.home / g("gmail", "token_file", "gmail-token.json"))
         # secrets
         self.github_token = env.get("GITHUB_TOKEN", "")
         self.ops_webhook = env.get("OPS_WEBHOOK_URL", "")

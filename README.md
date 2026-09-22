@@ -34,7 +34,7 @@ those two files; the code contains none.
 | Discord relay | core | a bot, two channels |
 | Attachment text extraction | core | poppler, tesseract, optional faster-whisper |
 | Drive attachments | shipped (`flux-drive-auth`) | Google Cloud OAuth client, a folder |
-| Gmail feed | planned (v1.x) | Gmail API scope read + labels |
+| Gmail feed | shipped (`flux-gmail`, `flux-gmail-auth`) | Gmail API, scope gmail.modify |
 | Google Keep checklists | not shipped | unofficial API; experimental |
 | Memory mirror + reconcile | not shipped | Claude Code file-based memory store |
 
