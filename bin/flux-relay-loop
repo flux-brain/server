@@ -6,7 +6,8 @@ HOME_DIR="${FLUX_HOME:-/var/lib/flux}"
 LOCK="${FLUX_LOCK_DIR:-/run/lock}/flux-relay.lock"
 LOG="$HOME_DIR/logs/relay.log"
 mkdir -p "$HOME_DIR/logs" "$HOME_DIR/state"
+RELAY="$(dirname "$(readlink -f "$0")")/flux-relay"   # the sibling in the same venv bin, whatever PATH says
 while true; do
-  flock -n "$LOCK" flux-relay >> "$LOG" 2>&1
+  flock -n "$LOCK" "$RELAY" >> "$LOG" 2>&1
   sleep 15
 done
