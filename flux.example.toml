@@ -1,0 +1,49 @@
+# Flux server configuration (v1 target). Copy to $FLUX_HOME/flux.toml. No secrets here: they go in flux.env.
+# Every instance-specific value lives here or in flux.env; the code contains none.
+
+[owner]
+name = "Your Name"                 # how the relay and the routine refer to you
+discord_user_id = "000000000000000000"   # @mentioned on questions
+
+[vault]
+repo = "you/vault"                 # private repository made from the vault template
+branch = "main"
+
+[discord]
+channel = "flux"                   # capture + conversation channel (id cached in state once found)
+log_channel = "flux-log"           # muted log channel; while absent, everything posts to `channel`
+# guild id and bot token: flux.env
+
+[routine]
+# Cloud routine "vault-inbox": the relay starts it when a capture arrives. Token: flux.env ROUTINE_FIRE_TOKEN.
+fire_url = "https://api.anthropic.com/v1/claude_code/routines/<trigger id>/fire"
+min_interval_s = 180               # wait for a run marker before another start
+marker_fresh_s = 600               # a .run/active older than this is a crashed run's leftover
+
+[capture]
+settle_s = 60                      # an Obsidian note must stay unchanged this long before it counts
+max_attachment_mb = 20
+audio_minutes = 30                 # transcription cap
+
+[paths]
+home = "/var/lib/flux"             # state, tree cache, logs; override with $FLUX_HOME
+lock_dir = "/run/lock"
+
+[modules]
+drive = false                      # attachments to cloud storage (Google Drive today)
+memory = false                     # memory mirror + page/memory reconcile
+keep = false                       # Google Keep checklists (experimental: unofficial API)
+gmail = false                      # Gmail label feed
+
+[drive]                            # when modules.drive = true
+drive_id = ""
+folder_id = ""
+token_file = "drive-token.json"    # relative to paths.home
+
+[gmail]                            # when modules.gmail = true
+label = "📁 Vault"
+filed_label = "📁 Vault/Filed"
+token_file = "gmail-token.json"
+
+[monitoring]                       # optional; empty = no pings, no alerts
+ops_webhook_env = "OPS_WEBHOOK_URL"   # name of the env var holding a Discord webhook for failure alerts

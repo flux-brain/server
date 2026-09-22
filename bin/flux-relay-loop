@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Runs the relay every 15 s under a lock (a slow tick, say a long OCR, is skipped rather than queued).
+# Installed by INSTALL.md; systemd/flux-relay.service runs it as the `flux` user.
+set -u
+HOME_DIR="${FLUX_HOME:-/var/lib/flux}"
+LOCK="${FLUX_LOCK_DIR:-/run/lock}/flux-relay.lock"
+LOG="$HOME_DIR/logs/relay.log"
+mkdir -p "$HOME_DIR/logs" "$HOME_DIR/state"
+while true; do
+  flock -n "$LOCK" flux-relay >> "$LOG" 2>&1
+  sleep 15
+done

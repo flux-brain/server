@@ -1,0 +1,22 @@
+[Unit]
+Description=Flux Discord relay (capture channel <-> vault repository), every 15 s
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=flux
+Group=flux
+Environment=FLUX_HOME=/var/lib/flux
+Environment=PATH=/var/lib/flux/venv/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/var/lib/flux/venv/bin/flux-relay-loop
+Restart=always
+RestartSec=10
+# Sandbox: the relay needs its home (state, logs, whisper model), the lock dir and the network; nothing else.
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/flux /run/lock
+PrivateTmp=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

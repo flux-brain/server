@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=77"]   # PEP 639 licence expression
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "flux-brain"
+version = "0.1.0"
+description = "Flux server side: the Discord relay that connects a capture channel to a vault repository maintained by Claude Code routines"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.11"           # tomllib
+authors = [{ name = "Eric Guichard" }]
+dependencies = [
+  "requests>=2.31",
+  "beautifulsoup4>=4.12",              # HTML email bodies
+  "python-docx>=1.1",                  # .docx text
+  "python-pptx>=1.0",                  # .pptx text
+  "odfpy>=1.4",                        # OpenDocument text
+  "openpyxl>=3.1",                     # .xlsx cells
+  "cramjam>=2.8",                      # Apple iWork (.pages/.key/.numbers) snappy blocks
+]
+
+[project.optional-dependencies]
+audio = ["faster-whisper>=1.0"]        # voice memo transcription (downloads the "small" model, ~460 MB, on first use)
+drive = ["google-api-python-client>=2.100", "google-auth-oauthlib>=1.2"]   # attachments to Google Drive (module)
+
+[project.scripts]
+flux-relay = "flux_brain.relay:main"
+
+[tool.setuptools.packages.find]
+include = ["flux_brain*"]
