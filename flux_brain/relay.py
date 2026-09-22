@@ -128,7 +128,7 @@ RELAY_NOTE = re.compile(r"^inbox/\d{4}-\d{2}-\d{2}T\d{4}Z-\d{17,20}\.md$")
 # (<stamp>-keep-<slug>.md, <stamp>-keep-note-<id>.md, already settled 90 s in Keep), the Gmail relay (<stamp>-gmail-<id>.md)
 # and the memory reconcile (<stamp>-memory-reconcile-<slug>.md). Nobody is still typing them, so they start the routine
 # on the tick they appear instead of waiting PHONE_SETTLE. Stamps: Keep %H%M%S, Gmail and reconcile %H%M.
-HOST_NOTE = re.compile(r"^inbox/\d{4}-\d{2}-\d{2}T\d{4}(\d{2})?Z-(keep|gmail|memory-reconcile)-[^/]+\.md$")
+HOST_NOTE = re.compile(r"^inbox/\d{4}-\d{2}-\d{2}T\d{4}(\d{2})?Z-(keep|gmail|memory-reconcile|tasks)-[^/]+\.md$")  # tasks added 2026-09-22: its captures are server-written too
 MANIFEST_MAX = 20  # inbox paths listed in the start message (P8)
 DISCORD = "https://discord.com/api/v10"
 GITHUB = "https://api.github.com"

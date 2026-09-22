@@ -130,7 +130,7 @@ RECON = "inbox/2026-09-17T1318Z-memory-reconcile-vault-setup.md"
 TYPED = "inbox/Test nite 1656.md"
 DISC = "inbox/2026-09-17T1501Z-1550159687578550363.md"
 # 17 server-written notes (Keep, Gmail, reconcile) start at once: no settle timer, no received post
-for hp in (KEEP, GMAIL, RECON, "inbox/2026-09-17T122915Z-keep-note-abc123.md"):
+for hp in (KEEP, GMAIL, RECON, "inbox/2026-09-17T122915Z-keep-note-abc123.md", "inbox/2026-09-22T163859Z-tasks-sudesca.md"):
     assert m.HOST_NOTE.match(hp), hp
 assert not m.HOST_NOTE.match(TYPED) and not m.HOST_NOTE.match(DISC) and not m.HOST_NOTE.match("inbox/keep-shopping.md")
 reset(); st = {"obsidian_notes": {}}; r = relay(st); r.watch_obsidian_notes([blob(KEEP)], now=1000, channel="C")
