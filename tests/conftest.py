@@ -34,6 +34,20 @@ def _flux_home_is_temporary():
 
 
 @pytest.fixture
+def flux_home(tmp_path):
+    """A second home: write flux.toml/flux.env into it, then `load()` it. The default test home is restored after."""
+    from flux_brain import config
+
+    def use(toml, env=""):
+        (tmp_path / "flux.toml").write_text(toml)
+        (tmp_path / "flux.env").write_text(env)
+        (tmp_path / "state").mkdir(exist_ok=True)
+        return config.load(tmp_path)
+    yield use
+    config.load(HOME)
+
+
+@pytest.fixture
 def google_token(tmp_path):
     """A refresh-token file of the shape the consent commands write (fake ids)."""
     import json

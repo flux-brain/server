@@ -122,7 +122,7 @@ def make(pages):
 def settle(s, slug="project-x"):
     """The owner's edit seen on one tick, then the settle window elapsed and the next tick files it."""
     s.tick()
-    s.st["projects"][slug]["unsettled"]["since"] -= tk.SETTLE + 1
+    s.st["projects"][slug]["unsettled"]["since"] -= tk.CFG.tasks_settle + 1
     s.tick()
 
 
@@ -186,7 +186,7 @@ def test_owner_edits_open_the_settle_window_then_one_capture():
     s.api.add(lid, "Call the bank")
     s.tick()
     assert s.gh.puts == [] and "unsettled" in s.st["projects"]["project-x"]
-    s.st["projects"]["project-x"]["unsettled"]["since"] -= tk.SETTLE + 1
+    s.st["projects"]["project-x"]["unsettled"]["since"] -= tk.CFG.tasks_settle + 1
     s.tick()
     assert len(s.gh.puts) == 1 and s.gh.puts[0][0].startswith("inbox/") and "-tasks-project-x.md" in s.gh.puts[0][0]
     body = s.gh.puts[0][1]

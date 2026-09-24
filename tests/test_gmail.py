@@ -97,7 +97,7 @@ class RunHarness:
     def make(self, filed, pages, file_thread):
         r = gr.GmailRelay.__new__(gr.GmailRelay)
         r.st = {"filed": dict(filed), "failures": 0}
-        r.labels = {gr.LABEL: "L1", gr.FILED: "L2"}
+        r.labels = {gr.CFG.gmail_label: "L1", gr.CFG.gmail_filed_label: "L2"}
         r.label_ids = lambda: r.labels
 
         def api(method, path, **kw):

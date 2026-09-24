@@ -8,7 +8,6 @@ work, the reconcile coalescing timer, the memory applier trigger and the two-cha
 No network: requests.post, time.sleep and save_state are replaced per test, so the live state file is never touched.
 """
 import datetime as dt
-import tempfile
 import time
 
 import pytest
@@ -233,11 +232,11 @@ def test_typed_note_settles_and_gets_one_received_post(h):
     st = {"obsidian_notes": {}}
     r = h.relay(st)
     r.watch_obsidian_notes([blob(TYPED, "b" * 40)], now=1000, channel="C")
-    assert not st.get("fire_pending") and st["obsidian_fire_at"] == 1000 + m.PHONE_SETTLE
+    assert not st.get("fire_pending") and st["obsidian_fire_at"] == 1000 + m.CFG.phone_settle
     assert len(h.calls) == 1 and "received" in h.calls[0][1]["content"] and h.calls[0][1]["enforce_nonce"]
     r.watch_obsidian_notes([blob(TYPED, "c" * 40)], now=1050, channel="C")
     assert len(h.calls) == 1
-    r.watch_obsidian_notes([blob(TYPED, "c" * 40)], now=1050 + m.PHONE_SETTLE, channel="C")
+    r.watch_obsidian_notes([blob(TYPED, "c" * 40)], now=1050 + m.CFG.phone_settle, channel="C")
     assert st.get("fire_pending") is True
 
 
@@ -334,7 +333,7 @@ def test_second_start_waits_for_the_ceiling(h):
     st = {"fire_pending": True}
     r = h.relay(st)
     r.maybe_fire(0, "C", [blob(DISC)])
-    assert st["fire_ceiling_until"] > time.time() + m.FIRE_MIN_INTERVAL - 5 and m.FIRE_MIN_INTERVAL == 180
+    assert st["fire_ceiling_until"] > time.time() + m.CFG.fire_min_interval - 5 and m.CFG.fire_min_interval == 180
     h.calls.clear()
     st["fire_pending"] = True
     r.maybe_fire(0, "C", [blob(DISC)])
@@ -366,10 +365,10 @@ def test_reconcile_only_start_waits_owner_capture_carries_it(h):
     assert h.fired() and "reconcile_hold_until" not in st
 
 
-def test_memory_proposal_starts_the_applier_once_detached(h, monkeypatch):
+def test_memory_proposal_starts_the_applier_once_detached(h, monkeypatch, tmp_path):
     popens = []
     monkeypatch.setattr(m.subprocess, "Popen", lambda cmd, **kw: popens.append((cmd, kw)))
-    monkeypatch.setattr(m, "RECONCILE_LOG", tempfile.NamedTemporaryFile(delete=False).name)
+    monkeypatch.setattr(m.CFG, "log_dir", tmp_path)   # the applier's log file goes under the test home
     st = {}
     r = h.relay(st)
     P1 = {"type": "blob", "path": "memory-proposals/2026-09-17T1231-vault-setup.md", "sha": "p", "size": 9}
@@ -382,8 +381,8 @@ def test_memory_proposal_starts_the_applier_once_detached(h, monkeypatch):
     P2 = dict(P1, path="memory-proposals/2026-09-17T1700-vault-setup.md")
     r.trigger_apply([P1, P2])
     r.trigger_apply([P1, P2])
-    assert len(popens) == 1 and popens[0][0][:3] == m.RECONCILE_CMD[:3]
-    assert m.RECONCILE_CMD[2] == str(m.CFG.lock_dir / "flux-memory-reconcile.lock") and popens[0][1]["start_new_session"]
+    assert len(popens) == 1 and popens[0][0][:3] == m.reconcile_cmd()[:3]
+    assert m.reconcile_cmd()[2] == str(m.CFG.lock_dir / "flux-memory-reconcile.lock") and popens[0][1]["start_new_session"]
 
 
 def test_manifest_hints_name_page_and_memory_files(h):

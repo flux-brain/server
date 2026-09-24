@@ -20,7 +20,6 @@ failure count): $FLUX_HOME/state/state.json. Shared code (GitHub/Drive clients, 
 flux_brain.lib.
 """
 import hashlib
-import os
 import re
 import subprocess
 import sys
@@ -39,26 +38,20 @@ from .lib.state import load_json, save_json  # noqa: E402
 from .lib.captures import RELAY_NOTE, HOST_NOTE, host_kind, describe as describe_kind, carries_page  # noqa: E402
 from .lib.github import GitHub, session  # noqa: E402
 from .lib.drive import Drive  # noqa: E402
-from .lib.extract import extract_text, attachment_text_file, MAX_ATTACHMENT  # noqa: E402  (tests stub extract_text here)
+from .lib.extract import extract_text, attachment_text_file  # noqa: E402  (tests stub extract_text here)
 
-REPO = CFG.vault_repo
-BRANCH = CFG.vault_branch
+# Settings are read from CFG where they are used, not bound at import (2026-09-24), so `config.load()` reaches them.
 # Two channels since 2026-09-22 (the owner: "separate human questions and background info"; a run summary posted right
 # after his reply to a question was noise, and a summary landing after a question made him reply to the wrong
-# message). The CONVERSATION channel (`CHANNEL_NAMES`, first name found wins; the id is cached in state so a rename
+# message). The CONVERSATION channel (`CFG.channel_names`, first name found wins; the id is cached in state so a rename
 # in Discord changes nothing) carries his captures, ❓ questions, answers/drafts and the daily/weekly digests. The
-# LOG channel (`LOG_CHANNEL_NAME`, meant to be muted) carries what needs no human: `-filed.md` run summaries, the
+# LOG channel (`CFG.log_channel_name`, meant to be muted) carries what needs no human: `-filed.md` run summaries, the
 # 🤖 run links and the 📥 "note received" posts. Until the log channel exists and the bot role can see it, every
 # post goes to the conversation channel as before (see find_log_channel).
-CHANNEL_NAMES = CFG.channel_names
-LOG_CHANNEL_NAME = CFG.log_channel_name
-STATE_DIR = str(CFG.state_dir)
-STATE_FILE = os.path.join(STATE_DIR, "state.json")
 OUTBOUND_DIRS = ("briefings/daily/", "briefings/weekly/", "notify/")
 # Questions for the owner @mention him (the owner, 2026-09-17: "add the @mention for questions"). The routine's Photobooth520
 # question of 09:53 sat unseen among summaries and run links, because bot posts never notify. Only a notify/ file
 # that IS a question pings; summaries, digests and run links stay silent so the ping keeps its meaning.
-OWNER_DISCORD_ID = CFG.owner_discord_id
 
 
 def is_question(path, body):
@@ -83,15 +76,13 @@ FAIL_ALERT_AFTER = 20              # consecutive failed runs before alerting: si
                                    # (was 3 at the old 5-minute cadence; 3 x 15 s would page on a GitHub blip)
 # Start the vault-inbox routine as soon as a capture is filed (2026-09-15, the owner: "relay immediately").
 # Per-routine API trigger token generated at claude.ai/code/routines, kept only in this mode-600 file.
-FIRE_URL = CFG.fire_url
-FIRE_MIN_INTERVAL = CFG.fire_min_interval            # after a start, wait this long for its run marker before another start (was a fixed
-                                   # 300 s spacing until 2026-09-17 round 2; 20 of 21 runs that day pushed within 170 s)
+# CFG.fire_url / CFG.fire_min_interval: after a start, wait this long for its run marker before another start (was a fixed
+# 300 s spacing until 2026-09-17 round 2; 20 of 21 runs that day pushed within 170 s).
 # Run marker (2026-09-17, review round 2 P2a): every routine run pushes `.run/active` ("started: <UTC>") when it starts
 # and removes it in its last commit (vault CLAUDE.md, Run protocol). While a fresh marker exists no start is sent, for
 # fired AND scheduled runs, which replaced the clock-based quiet windows around the hour. A marker older than
-# MARKER_FRESH is a crashed run's leftover and is ignored (runs overwrite it too).
+# CFG.marker_fresh is a crashed run's leftover and is ignored (runs overwrite it too).
 RUN_MARKER = ".run/active"
-MARKER_FRESH = CFG.marker_fresh
 # Memory reconcile notes coalesce (review round 2 N4): a start whose only captures are reconcile notes waits
 # RECONCILE_COALESCE after the latest reconcile change, at most RECONCILE_MAX after the first, so a Claude Code session's
 # stream of memory edits is one run; the owner's own captures never wait for this and carry the reconcile notes along.
@@ -101,15 +92,22 @@ RECONCILE_MAX = 900
 # New memory-proposals/ files start the memory applier at once (round 2) instead of waiting for its */5 cron. Same
 # command and lock as the cron line, so the two never run together; the cron keeps the Kuma ping.
 # memory module (v2): the applier runs detached under the same lock as its cron line, so the two never overlap
-RECONCILE_CMD = ["flock", "-n", str(CFG.lock_dir / "flux-memory-reconcile.lock"), "flux-memory-reconcile", "apply"]
-RECONCILE_LOG = str(CFG.log_dir / "memory-reconcile.log")
+
+
+def reconcile_cmd():
+    return ["flock", "-n", str(CFG.lock_dir / "flux-memory-reconcile.lock"), "flux-memory-reconcile", "apply"]
+
+
+def reconcile_log():
+    return str(CFG.log_dir / "memory-reconcile.log")
+
+
 # Notes written in Obsidian (phone via GitSync, or laptop) also start the routine (2026-09-15, the owner: "add the
 # obsidian notes trigger"). GitSync pushes while a note is still being typed (and Obsidian creates an EMPTY file on
-# New note), so a note must stay unchanged for PHONE_SETTLE seconds before it counts. Notes the relay writes itself
+# New note), so a note must stay unchanged for CFG.phone_settle seconds before it counts. Notes the relay writes itself
 # (RELAY_NOTE) are excluded: they already started a run through `filed`. Notes other programs on this server write
 # COMPLETE in one commit (HOST_NOTE: Keep, Gmail, memory reconcile, Tasks, WhatsApp) start the routine on the tick
 # they appear (2026-09-17, responsiveness review P1). Both patterns and the wording per kind: flux_brain.lib.captures.
-PHONE_SETTLE = CFG.phone_settle
 MANIFEST_MAX = 20  # inbox paths listed in the start message (P8)
 DISCORD = "https://discord.com/api/v10"
 # Attachments go to cloud storage when the Drive module is on: flux_brain.lib.drive.
@@ -139,12 +137,16 @@ def chunk_lines(text, size):
     return out
 
 
+def state_file():
+    return CFG.state_file("state.json")
+
+
 def load_state():
-    return load_json(STATE_FILE, {"channel_id": None, "last_message_id": None, "posted": [], "failures": 0})
+    return load_json(state_file(), {"channel_id": None, "last_message_id": None, "posted": [], "failures": 0})
 
 
 def save_state(state):
-    save_json(STATE_FILE, state)  # atomic (lib.state), so a crash never leaves half a state file
+    save_json(state_file(), state)  # atomic (lib.state), so a crash never leaves half a state file
 
 
 def prune_posted(posted, tree_paths, cap=2000):
@@ -185,7 +187,7 @@ class Relay:
         self.dh = {"Authorization": f"Bot {CFG.discord_token}", "User-Agent": "flux-relay (flux-brain, 1.0)"}
         # tree-cache.json: the branch tip is checked with a conditional GET each tick and the recursive tree is
         # re-fetched only when it moved (item 7); this process is per-run, so the cache lives on disk.
-        self.ghc = GitHub(retry_writes=True, cache_file=os.path.join(STATE_DIR, "tree-cache.json"))
+        self.ghc = GitHub(retry_writes=True, cache_file=CFG.state_file("tree-cache.json"))
         self.drive = Drive(self.s) if CFG.mod_drive else None  # Drive module: attachments to cloud storage
 
     # ---------- Discord ----------
@@ -199,7 +201,7 @@ class Relay:
         r = self.discord("GET", f"/guilds/{self.guild}/channels")
         r.raise_for_status()
         for c in r.json():
-            if c["type"] == 0 and c["name"] in CHANNEL_NAMES:
+            if c["type"] == 0 and c["name"] in CFG.channel_names:
                 self.state["channel_id"] = c["id"]
                 return c["id"]
         return None  # channel not created yet, or bot role not granted on it
@@ -214,14 +216,14 @@ class Relay:
         r = self.discord("GET", f"/guilds/{self.guild}/channels")
         r.raise_for_status()
         for c in r.json():
-            if c["type"] == 0 and c["name"] == LOG_CHANNEL_NAME:
+            if c["type"] == 0 and c["name"] == CFG.log_channel_name:
                 st["log_channel_id"] = c["id"]
                 st.pop("log_channel_missing", None)
-                log(f"log channel #{LOG_CHANNEL_NAME} found ({c['id']}): summaries, run links and received posts go there now")
+                log(f"log channel #{CFG.log_channel_name} found ({c['id']}): summaries, run links and received posts go there now")
                 return c["id"]
         if not st.get("log_channel_missing"):
             st["log_channel_missing"] = True
-            log(f"#{LOG_CHANNEL_NAME} not visible to the bot; everything posts to the conversation channel until it is")
+            log(f"#{CFG.log_channel_name} not visible to the bot; everything posts to the conversation channel until it is")
         return None
 
     def log_target(self, channel):
@@ -311,7 +313,7 @@ class Relay:
             r = self.discord("GET", f"/channels/{channel}/messages",
                              params={"after": self.state["last_message_id"], "limit": 100})
             if r.status_code == 403:
-                raise RuntimeError(f"bot cannot read #{CHANNEL_NAMES[0]}: grant the bot's role View Channel + Send Messages on it (INSTALL.md)")
+                raise RuntimeError(f"bot cannot read #{CFG.channel_names[0]}: grant the bot's role View Channel + Send Messages on it (INSTALL.md)")
             r.raise_for_status()
             msgs = sorted(r.json(), key=lambda m: int(m["id"]))  # API returns newest first
             if not msgs:
@@ -396,7 +398,7 @@ class Relay:
             self.seen(channel, m["id"])  # P9a: immediate signal before the slow part
         for a in m.get("attachments", []):
             name = re.sub(r"[^A-Za-z0-9._-]", "_", a["filename"])
-            if a.get("size", 0) > MAX_ATTACHMENT:
+            if a.get("size", 0) > CFG.max_attachment_bytes:
                 lines.append(f"- attachment `{name}` skipped (over {CFG.max_attachment_mb} MB)")
                 continue
             try:
@@ -457,8 +459,8 @@ class Relay:
         if typed:
             # Every further push restarts the settle timer, so a note still being typed keeps waiting
             st["obsidian_pending"] = sorted(set(st.get("obsidian_pending", [])) | set(typed))
-            st["obsidian_fire_at"] = now + PHONE_SETTLE
-            log(f"obsidian note(s) changed, start in {PHONE_SETTLE}s if unchanged: {', '.join(typed)}")
+            st["obsidian_fire_at"] = now + CFG.phone_settle
+            log(f"obsidian note(s) changed, start in {CFG.phone_settle}s if unchanged: {', '.join(typed)}")
             for path in typed:
                 if path not in st["obsidian_notes"] and channel:
                     # First sight of a typed note (empty New-note files are excluded above, so this is the first push
@@ -467,7 +469,7 @@ class Relay:
                         name = path.split("/", 1)[1]
                         # log channel since 2026-09-22: a courtesy notice, nothing for the owner to do
                         self.post(self.log_target(channel), f"📥 Obsidian note \"{name}\" received; Claude starts on it about "
-                                  f"{PHONE_SETTLE} seconds after your last sync.", key=f"recv-{path}@{cur[path][:10]}")
+                                  f"{CFG.phone_settle} seconds after your last sync.", key=f"recv-{path}@{cur[path][:10]}")
                     except Exception as exc:  # noqa: BLE001
                         log(f"received post failed ({exc.__class__.__name__})")
         if host:
@@ -508,7 +510,7 @@ class Relay:
         now = time.time()
         if tree is not None:
             self.track_run_marker(tree, now)  # may re-arm a start for captures a finished run left behind
-        if not st.get("fire_pending") or not (FIRE_URL and CFG.fire_token):
+        if not st.get("fire_pending") or not (CFG.fire_url and CFG.fire_token):
             return
         if now < st.get("fire_not_before", 0):
             return  # Retry-After or an error backoff still running; fire on a later tick
@@ -551,14 +553,14 @@ class Relay:
                 body["text"] += f"; and {len(waiting) - MANIFEST_MAX} more"
             body["text"] += "."
         try:
-            r = requests.post(FIRE_URL, headers=headers, json=body, timeout=30)
+            r = requests.post(CFG.fire_url, headers=headers, json=body, timeout=30)
         except requests.RequestException as exc:
-            st["fire_not_before"] = now + FIRE_MIN_INTERVAL
-            log(f"fire: network error ({exc.__class__.__name__}), will retry in {FIRE_MIN_INTERVAL}s")
+            st["fire_not_before"] = now + CFG.fire_min_interval
+            log(f"fire: network error ({exc.__class__.__name__}), will retry in {CFG.fire_min_interval}s")
             save_state(st)
             return
         if r.ok:
-            st.update(fire_pending=False, fire_ceiling_until=now + FIRE_MIN_INTERVAL, fire_alerted=False,
+            st.update(fire_pending=False, fire_ceiling_until=now + CFG.fire_min_interval, fire_alerted=False,
                       fired_inbox=[p for p in (waiting or []) if p not in settling])
             st.pop("reconcile_first", None)
             st.pop("reconcile_hold_until", None)
@@ -583,11 +585,11 @@ class Relay:
                 wait = int(r.headers.get("Retry-After", "3600"))
             except ValueError:
                 wait = 3600
-            st["fire_not_before"] = now + max(wait, FIRE_MIN_INTERVAL)
+            st["fire_not_before"] = now + max(wait, CFG.fire_min_interval)
             log(f"fire: 429 rate limited, next attempt in {wait}s")
         elif r.status_code >= 500:
-            st["fire_not_before"] = now + FIRE_MIN_INTERVAL
-            log(f"fire: HTTP {r.status_code}, will retry in {FIRE_MIN_INTERVAL}s")
+            st["fire_not_before"] = now + CFG.fire_min_interval
+            log(f"fire: HTTP {r.status_code}, will retry in {CFG.fire_min_interval}s")
         else:
             # 400 (routine paused / beta header changed), 401 (token revoked or regenerated), 403, 404:
             # does not heal by itself. Drop the pending start, alert ONCE, try again in an hour.
@@ -619,7 +621,7 @@ class Relay:
                     except Exception:  # noqa: BLE001 - unreadable marker: age it from first sight
                         started = None
                     mk = st["marker"] = {"sha": ent["sha"], "started": started or now}
-                active = now - mk["started"] < MARKER_FRESH
+                active = now - mk["started"] < CFG.marker_fresh
             else:
                 st.pop("marker", None)
             if active and not st.get("run_active"):
@@ -681,8 +683,8 @@ class Relay:
             seen = set(st["proposals_seen"])
             new = [p for p in props if p not in seen]
             if new:
-                with open(RECONCILE_LOG, "ab") as out:
-                    subprocess.Popen(RECONCILE_CMD, stdout=out, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
+                with open(reconcile_log(), "ab") as out:
+                    subprocess.Popen(reconcile_cmd(), stdout=out, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
                                      start_new_session=True, close_fds=True)
                 log(f"memory proposal(s) seen, applier started: {', '.join(new)}")
             if new or len(props) != len(seen):
@@ -705,14 +707,14 @@ class Relay:
                       and e["path"] not in posted), key=lambda e: e["path"])
         for e in new:
             body = self.blob_text(e["sha"]).strip()
-            link = f"https://github.com/{REPO}/blob/{BRANCH}/{urllib.parse.quote(e['path'])}"
+            link = f"https://github.com/{CFG.vault_repo}/blob/{CFG.vault_branch}/{urllib.parse.quote(e['path'])}"
             head = "📰" if e["path"].startswith("briefings/") else "💬"
             # Discord caps a message at 2000 chars. Split on line boundaries into several posts
             # (2026-09-15: full drafts must arrive whole, the owner copies them from Discord); only past
             # MAX_POST_CHUNKS is the tail cut, with a link to the page.
             question = is_question(e["path"], body)
             if question:  # no file-name header: the mention and the question itself are what the owner sees
-                parts = chunk_lines(f"<@{OWNER_DISCORD_ID}> ❓ {question_text(body)}", 1900)
+                parts = chunk_lines(f"<@{CFG.owner_discord_id}> ❓ {question_text(body)}", 1900)
             else:
                 parts = chunk_lines(f"{head} **{e['path']}**\n{body}", 1900)
             # Routing (2026-09-22): run summaries are background -> log channel; questions, answers, drafts and the
@@ -738,7 +740,7 @@ class Relay:
                 if i < rec["done"]:
                     continue
                 self.post(target, part, key=f"{e['path']}@{e['sha'][:10]}#{i}",
-                          mention_user=OWNER_DISCORD_ID if question and i == 0 else None)
+                          mention_user=CFG.owner_discord_id if question and i == 0 else None)
                 rec["done"] = i + 1
                 save_state(self.state)
             progress.pop(e["path"], None)
@@ -755,10 +757,10 @@ def main():
         relay = Relay(state)
         channel = relay.find_channel()
         if not channel:
-            log(f"#{' / #'.join(CHANNEL_NAMES)} not visible to the bot yet; nothing to do")
+            log(f"#{' / #'.join(CFG.channel_names)} not visible to the bot yet; nothing to do")
             save_state(state)
             return 0
-        relay.log_channel = relay.find_log_channel()  # None until #<LOG_CHANNEL_NAME> exists: then log_target() = channel
+        relay.log_channel = relay.find_log_channel()  # None until the log channel exists: then log_target() = channel
         filed = relay.inbound(channel)
         tree = relay.tree()  # after inbound, so this tick's Discord notes are in it (and excluded by RELAY_NOTE)
         relay.watch_obsidian_notes(tree, channel=channel)  # may set fire_pending (typed notes after settling, server notes now)
