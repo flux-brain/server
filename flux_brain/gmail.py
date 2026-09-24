@@ -27,7 +27,6 @@ import base64
 import email
 import json
 import os
-import pathlib
 import re
 import sys
 import time
@@ -44,6 +43,7 @@ from .lib.secrets import SECRET_PATTERNS  # noqa: E402
 from .lib.state import load_json, save_json  # noqa: E402
 from .lib.github import GitHub, session  # noqa: E402
 from .lib.drive import Drive  # noqa: E402
+from .lib.google import GoogleToken, consent_main  # noqa: E402
 from .lib.extract import extract_text, extract_document, attachment_text_file, MAX_ATTACHMENT  # noqa: E402
 
 
@@ -141,17 +141,8 @@ class GmailRelay:
         self.s = session()          # GET retries only; the Gmail writes below are idempotent by construction anyway
         self.gh = GitHub()           # put_file keeps an existing file: a re-run after a crash never duplicates
         self.drive = Drive(self.s) if CFG.mod_drive else None   # originals to Drive only with the Drive module
-        try:
-            with open(TOKEN) as f:
-                t = json.load(f)
-        except FileNotFoundError:
-            raise SystemExit(f"flux: Gmail module is on but {TOKEN} is missing: run flux-gmail-auth (INSTALL.md)")
-        r = self.s.post(t.get("token_uri", "https://oauth2.googleapis.com/token"), timeout=30, data={
-            "client_id": t["client_id"], "client_secret": t["client_secret"],
-            "refresh_token": t["refresh_token"], "grant_type": "refresh_token"})
-        if not r.ok:  # invalid_grant after the consent was revoked: run flux-gmail-auth again
-            raise RuntimeError(f"Gmail token refresh failed: HTTP {r.status_code} (run flux-gmail-auth again if it persists)")
-        self.h = {"Authorization": f"Bearer {r.json()['access_token']}"}
+        # Exchanged here, not lazily: a missing or revoked token must fail the run before any label is read (lib.google)
+        self.h = GoogleToken(self.s, TOKEN, "Gmail", "flux-gmail-auth").headers()
 
     def api(self, method, path, **kw):
         r = self.s.request(method, GMAIL + path, headers=self.h, timeout=60, **kw)
@@ -396,27 +387,13 @@ if __name__ == "__main__":
     sys.exit(main())
 
 
-def auth_main(argv=None):
-    """`flux-gmail-auth <client_secret.json>`: one-time consent that writes $FLUX_HOME/gmail-token.json.
+SCOPE = "https://www.googleapis.com/auth/gmail.modify"   # the narrowest scope that lets messages.batchModify move
+                                                          # labels: reads mail and changes labels, cannot send or delete
 
-    Same OAuth Desktop client as flux-drive-auth (enable the Gmail API on the project too). Scope: gmail.modify, the
-    narrowest one that lets messages.batchModify move labels; it reads mail and changes labels, it cannot send and
-    cannot permanently delete. Needs a browser: run it on a
-    laptop (`pip install 'flux-brain[drive]'` brings google-auth-oauthlib) and copy the file to the server, mode 600."""
-    argv = sys.argv[1:] if argv is None else argv
-    if len(argv) != 1:
-        raise SystemExit("usage: flux-gmail-auth <client_secret.json>")
-    try:
-        from google_auth_oauthlib.flow import InstalledAppFlow
-    except ImportError:
-        raise SystemExit("flux-gmail-auth needs the drive extra: pip install 'flux-brain[drive]'")
-    scopes = ["https://www.googleapis.com/auth/gmail.modify"]
-    creds = InstalledAppFlow.from_client_secrets_file(argv[0], scopes=scopes).run_local_server(port=0, open_browser=True)
-    out = pathlib.Path(TOKEN)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps({"client_id": creds.client_id, "client_secret": creds.client_secret,
-                               "refresh_token": creds.refresh_token, "token_uri": creds.token_uri,
-                               "scopes": list(creds.scopes or scopes)}, indent=2))
-    out.chmod(0o600)
-    print(f"wrote {out} (mode 600). Copy it to the server's FLUX_HOME if this is not the server, create the label "
-          f"{CFG.gmail_label!r} in Gmail, then set [modules] gmail = true in flux.toml.")
+
+def auth_main(argv=None):
+    """`flux-gmail-auth <client_secret.json>`: one-time consent (scope gmail.modify) that writes
+    $FLUX_HOME/gmail-token.json. Same Desktop OAuth client as flux-drive-auth, with the Gmail API enabled on the
+    project; the rest is in lib.google."""
+    return consent_main(argv, "flux-gmail-auth", [SCOPE], TOKEN,
+                        f"create the label {CFG.gmail_label!r} in Gmail and set [modules] gmail = true in flux.toml.")

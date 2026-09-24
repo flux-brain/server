@@ -22,16 +22,17 @@ dependencies = [
 
 [project.optional-dependencies]
 audio = ["faster-whisper>=1.0"]        # voice memo transcription (downloads the "small" model, ~460 MB, on first use)
-drive = ["google-auth-oauthlib>=1.2"]     # flux-drive-auth / flux-gmail-auth only; uploads use plain requests
+google = ["google-auth-oauthlib>=1.2"]    # the three consent commands (flux-drive-auth, flux-gmail-auth, flux-tasks-auth); API calls use plain requests
+drive = ["google-auth-oauthlib>=1.2"]     # the old name of the same extra, kept so `pip install "flux-brain[drive]"` still works
 dev = ["pytest>=8"]
 
 [project.scripts]
 flux-relay = "flux_brain.relay:main"
-flux-drive-auth = "flux_brain.lib.drive:auth_main"   # one-time Drive consent (needs the `drive` extra)
+flux-drive-auth = "flux_brain.lib.drive:auth_main"   # one-time Drive consent (needs the `google` extra)
 flux-gmail = "flux_brain.gmail:main"                 # the Gmail module, one pass (run by flux-gmail.timer)
-flux-gmail-auth = "flux_brain.gmail:auth_main"       # one-time Gmail consent (needs the `drive` extra)
+flux-gmail-auth = "flux_brain.gmail:auth_main"       # one-time Gmail consent (needs the `google` extra)
 flux-tasks = "flux_brain.tasks:main"                 # the Tasks module (long-running, flux-tasks.service)
-flux-tasks-auth = "flux_brain.tasks:auth_main"       # one-time Tasks consent (needs the `drive` extra)
+flux-tasks-auth = "flux_brain.tasks:auth_main"       # one-time Tasks consent (needs the `google` extra)
 
 [tool.setuptools]
 script-files = ["bin/flux-relay-loop", "bin/flux-ask"]   # shell helpers installed next to flux-relay

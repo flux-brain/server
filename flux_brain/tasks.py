@@ -18,22 +18,21 @@ of each active project once, so with P active projects and a tick of T seconds t
 (1 + P) * 86400 / T; the default T = 60 keeps 25 projects near 37,000. Paused and done projects are renamed once
 and not polled. Raise `tick_s` if the log reports 403 quota errors.
 
-Token: `$FLUX_HOME/tasks-token.json`, written once by `flux-tasks-auth`, read only (access token refreshed in
-memory). State: `$FLUX_HOME/state/tasks-state.json`. Captures, not direct page edits: the routine is the only
+Token: `$FLUX_HOME/tasks-token.json`, written once by `flux-tasks-auth` (flux_brain.lib.google), read only (access
+token refreshed in memory). State: `$FLUX_HOME/state/tasks-state.json`. Captures, not direct page edits: the routine is the only
 writer of pages, so a tick that files an edit never races a run.
 """
 import json
 import os
-import pathlib
 import random
 import re
-import sys
 import time
 from datetime import datetime, timezone
 
 from .config import CFG
 from .lib.common import log, ops_alert
 from .lib.github import GitHub, session
+from .lib.google import GoogleToken, consent_main
 from .lib.secrets import SECRET_PATTERNS
 from .lib.state import load_json, save_json
 
@@ -187,25 +186,14 @@ def checklist_capture(slug, page, list_id, events, owner):
 
 # ---------- Google Tasks ----------
 class TasksApi:
-    """Thin client. The token file is read once; the access token is refreshed in memory per process."""
+    """Thin client. The token file is read once; the access token is refreshed in memory per process (lib.google)."""
 
     def __init__(self, s, token_path=TOKEN):
-        self.s, self.token_path, self._h = s, token_path, None
+        self.s = s
+        self.token = GoogleToken(s, token_path, "Tasks", "flux-tasks-auth")
 
     def headers(self):
-        if not self._h:
-            try:
-                with open(self.token_path) as f:
-                    t = json.load(f)
-            except FileNotFoundError:
-                raise SystemExit(f"flux: Tasks module is on but {self.token_path} is missing: run flux-tasks-auth (INSTALL.md)")
-            r = self.s.post(t.get("token_uri", "https://oauth2.googleapis.com/token"), timeout=30, data={
-                "client_id": t["client_id"], "client_secret": t["client_secret"],
-                "refresh_token": t["refresh_token"], "grant_type": "refresh_token"})
-            if not r.ok:
-                raise RuntimeError(f"Tasks token refresh failed: HTTP {r.status_code} (run flux-tasks-auth again if it persists)")
-            self._h = {"Authorization": f"Bearer {r.json()['access_token']}"}
-        return self._h
+        return self.token.headers()
 
     def call(self, method, path, **kw):
         """One API call. 401 -> refresh the access token once. 403/429 with a quota or rate reason (the first tick
@@ -214,7 +202,7 @@ class TasksApi:
         for attempt in range(5):
             r = self.s.request(method, TASKS + path, headers=self.headers(), timeout=30, **kw)
             if r.status_code == 401 and attempt == 0:
-                self._h = None
+                self.token.reset()   # exchange a fresh access token once
                 continue
             if r.status_code in (403, 429) and attempt < 4 and ("uota" in r.text or "ate" in r.text or r.status_code == 429):
                 wait = 5 * 2 ** attempt
@@ -478,20 +466,6 @@ def main():
 
 def auth_main(argv=None):
     """`flux-tasks-auth <client_secret.json>`: one-time consent (scope tasks only) that writes tasks-token.json.
-    Same Desktop OAuth client as flux-drive-auth; enable the Tasks API on the project first."""
-    argv = sys.argv[1:] if argv is None else argv
-    if len(argv) != 1:
-        raise SystemExit("usage: flux-tasks-auth <client_secret.json>")
-    try:
-        from google_auth_oauthlib.flow import InstalledAppFlow
-    except ImportError:
-        raise SystemExit("flux-tasks-auth needs the drive extra: pip install 'flux-brain[drive]'")
-    creds = InstalledAppFlow.from_client_secrets_file(argv[0], scopes=[SCOPE]).run_local_server(port=0, open_browser=True)
-    out = pathlib.Path(TOKEN)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps({"client_id": creds.client_id, "client_secret": creds.client_secret,
-                               "refresh_token": creds.refresh_token, "token_uri": creds.token_uri,
-                               "scopes": list(creds.scopes or [SCOPE])}, indent=2))
-    out.chmod(0o600)
-    print(f"wrote {out} (mode 600). Copy it to the server's FLUX_HOME if this is not the server, then set "
-          f"[modules] tasks = true in flux.toml and enable flux-tasks.service.")
+    Same Desktop OAuth client as flux-drive-auth; enable the Tasks API on the project first. The rest is in lib.google."""
+    return consent_main(argv, "flux-tasks-auth", [SCOPE], TOKEN,
+                        "set [modules] tasks = true in flux.toml and enable flux-tasks.service.")

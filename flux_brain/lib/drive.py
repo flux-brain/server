@@ -1,18 +1,15 @@
 """Google Drive uploads (the Drive module). Attachment originals go to a Drive folder, not into git, so the
 repository and the phone copy stay light; the note links the file and its extracted text lives in the repository.
 
-Token: `$FLUX_HOME/drive-token.json`, written once by `flux-drive-auth` (see below) from a Google Cloud OAuth
-"Desktop app" client. The file is READ only: an access token is refreshed in memory for each run and the file is
-never written back. Uploads are idempotent on file name (a re-run after a crash finds the existing file and returns
+Token: `$FLUX_HOME/drive-token.json`, written once by `flux-drive-auth` (flux_brain.lib.google, shared with the Gmail
+and Tasks modules since 2026-09-24). Uploads are idempotent on file name (a re-run after a crash finds the existing file and returns
 its link instead of creating a duplicate).
 
 Works with a shared drive (`[drive] drive_id` set) and with a folder in "My Drive" (`drive_id` empty).
 """
-import json
-import pathlib
-import sys
 
 from ..config import CFG
+from .google import GoogleToken, consent_main
 
 __all__ = ["DRIVE_FOLDER", "DRIVE_DRIVE_ID", "DRIVE_TOKEN", "Drive", "auth_main"]
 
@@ -25,24 +22,12 @@ SCOPE = "https://www.googleapis.com/auth/drive.file"   # only files this app cre
 class Drive:
     def __init__(self, session, token_path=DRIVE_TOKEN, folder=DRIVE_FOLDER, drive_id=DRIVE_DRIVE_ID):
         self.s, self.token_path, self.folder, self.drive_id = session, token_path, folder, drive_id
-        self._auth = None
+        self.token = GoogleToken(session, token_path, "Drive", "flux-drive-auth")
         if not folder:
             raise SystemExit("flux: Drive module is on but [drive] folder_id is empty in flux.toml")
 
     def headers(self):
-        if not self._auth:
-            try:
-                with open(self.token_path) as f:
-                    t = json.load(f)
-            except FileNotFoundError:
-                raise SystemExit(f"flux: Drive module is on but {self.token_path} is missing: run flux-drive-auth (INSTALL.md)")
-            r = self.s.post(t.get("token_uri", "https://oauth2.googleapis.com/token"), timeout=30, data={
-                "client_id": t["client_id"], "client_secret": t["client_secret"],
-                "refresh_token": t["refresh_token"], "grant_type": "refresh_token"})
-            if not r.ok:  # e.g. invalid_grant after the consent was revoked: run flux-drive-auth again
-                raise RuntimeError(f"Drive token refresh failed: HTTP {r.status_code} (run flux-drive-auth again if it persists)")
-            self._auth = {"Authorization": f"Bearer {r.json()['access_token']}"}
-        return self._auth
+        return self.token.headers()   # exchanged once per process, in memory (lib.google)
 
     def _corpus(self):
         """Query scope: a shared drive needs corpora + driveId; My Drive needs neither."""
@@ -72,27 +57,7 @@ class Drive:
 
 
 def auth_main(argv=None):
-    """`flux-drive-auth <client_secret.json>`: one-time consent that writes $FLUX_HOME/drive-token.json.
-
-    Needs a browser, so run it on a laptop (`pip install 'flux-brain[drive]'`, then copy the token file to the
-    server's FLUX_HOME, mode 600) or on the server with SSH port forwarding of the port it prints. The client
-    secret comes from Google Cloud Console: APIs & Services > Credentials > OAuth client ID > Desktop app, with
-    the Drive API enabled on the project. The token grants the drive.file scope only."""
-    argv = sys.argv[1:] if argv is None else argv
-    if len(argv) != 1:
-        raise SystemExit("usage: flux-drive-auth <client_secret.json>")
-    try:
-        from google_auth_oauthlib.flow import InstalledAppFlow
-    except ImportError:
-        raise SystemExit("flux-drive-auth needs the drive extra: pip install 'flux-brain[drive]'")
-    flow = InstalledAppFlow.from_client_secrets_file(argv[0], scopes=[SCOPE])
-    creds = flow.run_local_server(port=0, open_browser=True)
-    out = pathlib.Path(DRIVE_TOKEN)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps({
-        "client_id": creds.client_id, "client_secret": creds.client_secret,
-        "refresh_token": creds.refresh_token, "token_uri": creds.token_uri, "scopes": list(creds.scopes or [SCOPE]),
-    }, indent=2))
-    out.chmod(0o600)
-    print(f"wrote {out} (mode 600). Copy it to the server's FLUX_HOME if this is not the server, then set "
-          f"[modules] drive = true and [drive] folder_id in flux.toml.")
+    """`flux-drive-auth <client_secret.json>`: one-time consent (scope drive.file only: files this app creates) that
+    writes $FLUX_HOME/drive-token.json. Enable the Drive API on the Cloud project first; the rest is in lib.google."""
+    return consent_main(argv, "flux-drive-auth", [SCOPE], DRIVE_TOKEN,
+                        "set [modules] drive = true and [drive] folder_id in flux.toml.")
