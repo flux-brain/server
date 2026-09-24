@@ -1,5 +1,5 @@
 """Attachment text extraction for the vault relays (flux_brain.lib, 2026-09-18). Moved VERBATIM from
-vault-discord-relay.py (2026-09-15 to 2026-09-17 history in the comments below); the Gmail relay used to reach these
+the original relay script (2026-09-15 to 2026-09-17 history in the comments below); the Gmail relay used to reach these
 functions by exec-loading the relay module. The relay re-exports every name here, so its offline tests still stub
 `extract_text` on the relay module.
 
