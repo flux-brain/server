@@ -44,9 +44,9 @@ those two files; the code contains none.
 
 ## Tests
 
-`pytest` (after `pip install -e ".[dev]"`), or `PYTHON=.venv/bin/python tests/run_all.sh` without pytest. Offline: every suite points `FLUX_HOME` at a fresh temporary
-directory before importing the package, so no test can touch a live state file. Run them before
-installing any edit; the loop service picks up file changes within 15 seconds.
+`pytest` (after `pip install -e ".[dev]"`). Offline: `tests/conftest.py` points `FLUX_HOME` at a fresh temporary
+directory before the package is imported, so no test can touch a live state file. Run them before installing any
+edit.
 
 `tests/clean-install.sh` is the install test: it follows INSTALL.md on a fresh Ubuntu 24.04 container against the
 published repository and ends on the expected Discord 401 for placeholder secrets. Run it after any change to

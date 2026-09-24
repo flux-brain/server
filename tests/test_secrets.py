@@ -1,23 +1,10 @@
-"""Offline tests for vault_common.SECRET_PATTERNS (2026-09-18, code review): every family matches one synthetic sample
-and ordinary prose does not. Samples are BUILT at run time by concatenation so the mirrored repos never carry a
-token-shaped literal (the same trick as the WhatsApp hook test).
+"""SECRET_PATTERNS (2026-09-18, code review): every family matches one synthetic sample and ordinary prose does not.
+Samples are BUILT at run time by concatenation so the repository never carries a token-shaped literal."""
+import pytest
 
-  python tests/test_vault_common.py
-"""
-import sys
-from _load import secrets  # noqa: E402
-SECRET_PATTERNS = secrets.SECRET_PATTERNS
+from flux_brain.lib.secrets import SECRET_PATTERNS
 
-fails = 0
-
-
-def check(name, cond):
-    global fails
-    print(("PASS " if cond else "FAIL ") + name)
-    fails += 0 if cond else 1
-
-
-A, D, H = "A" * 40, "1" * 20, "abcdef0123456789abcdef0123456789"
+A, D = "A" * 40, "1" * 20
 SAMPLES = {
     "discord webhook": "https://discord" + ".com/api/webhooks/" + D + "/" + A + A,
     "cloudflare token": "cf" + "ut_" + A,
@@ -37,9 +24,6 @@ SAMPLES = {
     "gitlab pat": "glpat" + "-" + A,
     "npm token": "npm" + "_" + ("a1" * 18),
 }
-for name, sample in SAMPLES.items():
-    check(f"matches {name}", SECRET_PATTERNS.search("see " + sample + " here") is not None)
-
 CLEAN = [
     "the Discord token is read at run time from flux.env, never written to disk",
     "the trigger token lives in flux.env (mode 600); token: rotated 2026-09-15",
@@ -49,9 +33,17 @@ CLEAN = [
     "https://discord.com/channels/100000000000000002/100000000000000003",
     "ya29 is the prefix Google uses; eyJ starts a base64 JSON header",
 ]
-for text in CLEAN:
-    check(f"clean: {text[:50]}", SECRET_PATTERNS.search(text) is None)
-check("redaction keeps the surrounding text", SECRET_PATTERNS.sub("[REDACTED]", "key " + SAMPLES["jwt"] + " end") == "key [REDACTED] end")
 
-print("FAILS:", fails)
-sys.exit(1 if fails else 0)
+
+@pytest.mark.parametrize("family", sorted(SAMPLES))
+def test_matches(family):
+    assert SECRET_PATTERNS.search("see " + SAMPLES[family] + " here") is not None
+
+
+@pytest.mark.parametrize("text", CLEAN)
+def test_clean_prose_does_not_match(text):
+    assert SECRET_PATTERNS.search(text) is None
+
+
+def test_redaction_keeps_the_surrounding_text():
+    assert SECRET_PATTERNS.sub("[REDACTED]", "key " + SAMPLES["jwt"] + " end") == "key [REDACTED] end"

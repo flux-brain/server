@@ -104,5 +104,5 @@ in `#flux` and watch it react within 15 seconds.
 
 ## 6. Tests
 
-`pytest` runs the offline suites (no network; every state path points at a temporary directory).
-Run them before installing any edit: the relay picks up file changes within 15 seconds.
+`pip install -e ".[dev]"`, then `pytest`: offline tests (no network; `tests/conftest.py` points every state path
+at a temporary directory). Run them before installing any edit.

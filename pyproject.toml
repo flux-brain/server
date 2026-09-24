@@ -42,4 +42,4 @@ include = ["flux_brain*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q"
+addopts = "-q -p no:cacheprovider"   # quiet; no .pytest_cache next to the sources

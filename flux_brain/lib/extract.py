@@ -1,7 +1,6 @@
 """Attachment text extraction for the vault relays (flux_brain.lib, 2026-09-18). Moved VERBATIM from
 the original relay script (2026-09-15 to 2026-09-17 history in the comments below); the Gmail relay used to reach these
-functions by exec-loading the relay module. The relay re-exports every name here, so its offline tests still stub
-`extract_text` on the relay module.
+functions by exec-loading the relay module; since 2026-09-24 the relay imports the three names it uses.
 
 Runs in the project virtualenv (python-docx, python-pptx, odfpy, openpyxl, bs4, faster-whisper, cramjam) with the
 poppler/tesseract/antiword/catdoc CLIs installed on the host.
