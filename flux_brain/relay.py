@@ -5,28 +5,25 @@ does not reach discord.com, and we refuse to put a bot token in cloud config. So
 all Discord I/O and talks to the repo only through the GitHub REST API (no local clone, hence no
 rebase conflicts with the routines or the phone).
 
-  inbound : new human messages in #vault -> inbox/<ts>-<msgid>.md, then a ✅ reaction (or a short
+  inbound : new human messages in the conversation channel -> inbox/<ts>-<msgid>.md, then a ✅ reaction (or a short
             reply if reactions are denied). With the Drive module on, attachment originals go to a
             Drive folder, NOT into git, so the repo and the phone copy stay light, and the note links
             the Drive file; without it the note links Discord's copy. The extracted text always lands
             in raw/attachments/.
-  outbound: new files under briefings/daily, briefings/weekly, notify/ -> posted to #vault once.
+  outbound: new files under briefings/daily, briefings/weekly, notify/ -> posted to the conversation channel once.
   run link: each time the relay starts the vault-inbox routine it posts the run's claude.ai link to
-            #vault, so the owner can watch Claude work step by step (2026-09-16, the owner).
+            the log channel, so the owner can watch Claude work step by step (2026-09-16, the owner).
 
 Secrets come from $FLUX_HOME/flux.env (Discord bot token, guild id, routine trigger token, GitHub token; see
 flux_brain.config). Nothing secret is written to disk or logs. State (channel ids, last message id, posted paths,
 failure count): $FLUX_HOME/state/state.json. Shared code (GitHub/Drive clients, state files, extraction, log):
 flux_brain.lib.
 """
-import base64
 import hashlib
-import json
 import os
 import re
 import subprocess
 import sys
-import tempfile
 import time
 import urllib.parse
 from datetime import datetime, timezone
@@ -40,6 +37,7 @@ from .config import CFG  # noqa: E402
 from .lib.common import log  # noqa: E402
 from .lib.secrets import SECRET_PATTERNS  # noqa: E402
 from .lib.state import load_json, save_json  # noqa: E402
+from .lib.captures import RELAY_NOTE, HOST_NOTE, host_kind, describe as describe_kind, carries_page  # noqa: E402
 from .lib.github import GitHub, session  # noqa: E402
 from .lib.drive import Drive  # noqa: E402
 from .lib.extract import *  # noqa: E402,F401,F403  everything in extract.__all__ (extract_text, MAX_ATTACHMENT, ...)
@@ -94,7 +92,7 @@ def is_run_summary(path):
 MESSAGE_GIVE_UP = 3                # (2026-09-17 code review fix 2) strict filing attempts for ONE message before its
                                    # failing attachments are listed as not fetched and the queue moves on (file_guarded)
 FAIL_ALERT_AFTER = 20              # consecutive failed runs before alerting: since 2026-09-15 the relay runs
-                                   # every 15 s (vault-discord-relay-loop service), so 20 runs ~ 5 minutes
+                                   # every 15 s (flux-relay-loop), so 20 runs ~ 5 minutes
                                    # (was 3 at the old 5-minute cadence; 3 x 15 s would page on a GitHub blip)
 # Start the vault-inbox routine as soon as a capture is filed (2026-09-15, the owner: "relay immediately").
 # Per-routine API trigger token generated at claude.ai/code/routines, kept only in this mode-600 file.
@@ -121,26 +119,15 @@ RECONCILE_LOG = str(CFG.log_dir / "memory-reconcile.log")
 # Notes written in Obsidian (phone via GitSync, or laptop) also start the routine (2026-09-15, the owner: "add the
 # obsidian notes trigger"). GitSync pushes while a note is still being typed (and Obsidian creates an EMPTY file on
 # New note), so a note must stay unchanged for PHONE_SETTLE seconds before it counts. Notes the relay writes itself
-# (inbox/<stamp>-<discord snowflake>.md) are excluded: they already started a run through `filed`.
+# (RELAY_NOTE) are excluded: they already started a run through `filed`. Notes other programs on this server write
+# COMPLETE in one commit (HOST_NOTE: Keep, Gmail, memory reconcile, Tasks, WhatsApp) start the routine on the tick
+# they appear (2026-09-17, responsiveness review P1). Both patterns and the wording per kind: flux_brain.lib.captures.
 PHONE_SETTLE = CFG.phone_settle
-RELAY_NOTE = re.compile(r"^inbox/\d{4}-\d{2}-\d{2}T\d{4}Z-\d{17,20}\.md$")
-# Notes other programs on this server write COMPLETE in one commit (2026-09-17, responsiveness review P1): the Keep sync
-# (<stamp>-keep-<slug>.md, <stamp>-keep-note-<id>.md, already settled 90 s in Keep), the Gmail relay (<stamp>-gmail-<id>.md)
-# and the memory reconcile (<stamp>-memory-reconcile-<slug>.md). Nobody is still typing them, so they start the routine
-# on the tick they appear instead of waiting PHONE_SETTLE. Stamps: Keep %H%M%S, Gmail and reconcile %H%M.
-HOST_NOTE = re.compile(r"^inbox/\d{4}-\d{2}-\d{2}T\d{4}(\d{2})?Z-(keep|gmail|memory-reconcile|tasks|whatsapp)-[^/]+\.md$")  # tasks + whatsapp: server-written captures too
 MANIFEST_MAX = 20  # inbox paths listed in the start message (P8)
 DISCORD = "https://discord.com/api/v10"
-GITHUB = "https://api.github.com"
 # Attachments go to cloud storage when the Drive module is on: flux_brain.lib.drive.
-
-# A capture matching these is NOT filed: the repo is synced to a phone and a laptop, so a pasted key
-# would spread. Shared with memory-split.py (2026-09-15) so the two can never drift apart.
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
-
-
-
+# A capture matching SECRET_PATTERNS is NOT filed: the repo is synced to a phone and a laptop, so a pasted key
+# would spread (the one definition: flux_brain.lib.secrets).
 
 MAX_POST_CHUNKS = 5  # outbound files longer than ~9500 chars are cut after this many Discord posts
 
@@ -170,7 +157,7 @@ def load_state():
 
 
 def save_state(state):
-    save_json(STATE_FILE, state)  # atomic (vaultlib.state), so a crash never leaves half a state file
+    save_json(STATE_FILE, state)  # atomic (lib.state), so a crash never leaves half a state file
 
 
 def prune_posted(posted, tree_paths, cap=2000):
@@ -194,15 +181,12 @@ def describe_inbox(path, hint=None, leave=False):
     shown = "`" + re.sub(r"[\x00-\x1f`]", "", path) + "`"
     if leave:
         return f"{shown} (Obsidian note, still being edited: leave it)"
-    mt = re.match(r"^inbox/[^/]*Z-(keep-note|keep|gmail|memory-reconcile)-([^/]+)\.md$", path)
     if RELAY_NOTE.match(path):
         return f"{shown} (Discord)"
-    if not mt:
+    hk = host_kind(path)   # lib.captures: the same table the settle rule and page_hints use (2026-09-24)
+    if not hk:
         return f"{shown} (Obsidian note)"
-    kind, rest = mt.groups()
-    text = {"keep-note": "Keep note", "keep": f"Keep checklist edit, project {rest}", "gmail": "Gmail",
-            "memory-reconcile": f"memory reconcile, project {rest}"}[kind]
-    return f"{shown} ({text}{'; ' + hint if hint else ''})"
+    return f"{shown} ({describe_kind(*hk)}{'; ' + hint if hint else ''})"
 
 
 class Relay:
@@ -312,7 +296,7 @@ class Relay:
         elif not r.ok:
             r.raise_for_status()
 
-    # ---------- GitHub + Drive (vaultlib since 2026-09-18; method names kept for the tests and the callers) ----------
+    # ---------- GitHub + Drive (lib since 2026-09-18; method names kept for the tests and the callers) ----------
     def put_file(self, path, data: bytes, message):
         self.ghc.put_file(path, data, message)  # an existing file is kept (re-run after a crash)
 
@@ -464,7 +448,7 @@ class Relay:
         Notes written by the server's own programs (HOST_NOTE) make a start pending on the same tick (2026-09-17, review
         P1). Since round 2 they no longer wait for a typed note that is still settling: the start lists that note as
         "still being edited: leave it" instead (N1), and reconcile notes get a coalescing timer (N4).
-        A NEW typed note gets one "received" post in #vault when `channel` is given (review P9c).
+        A NEW typed note gets one "received" post in the log channel when `channel` is given (review P9c).
         Uses the tree outbound() needs anyway (no extra GitHub call). State: `obsidian_notes` {path: sha} as of
         the last tick, `obsidian_pending` paths waiting to settle, `obsidian_fire_at` when they count."""
         st = self.state
@@ -596,7 +580,7 @@ class Relay:
             save_state(st)
             url = r.json().get('claude_code_session_url')
             log(f"fired vault-inbox: {url or '?'}")
-            # Post the run link to #vault (2026-09-16, the owner: "see Claude step by step work in Discord"): the
+            # Post the run link to Discord (2026-09-16, the owner: "see Claude step by step work in Discord"): the
             # cloud run cannot reach Discord itself, so the live step-by-step view is the claude.ai page this
             # links to. <...> suppresses Discord's link preview. self.post sends it once (no 5xx retries, see its
             # docstring). A failed post never undoes the start and is not retried; the log line keeps the link.
@@ -672,13 +656,15 @@ class Relay:
             log(f"run marker check failed ({exc.__class__.__name__})")
 
     def page_hints(self, paths, tree):
-        """{inbox path: "page wiki/projects/<slug>.md, memory: a.md, b.md"} for Keep checklist and memory reconcile
-        notes (round 2 N7b), so the run opens the right memory files at once. Best effort: any failure means no hint."""
+        """{inbox path: "page wiki/projects/<slug>.md, memory: a.md, b.md"} for the captures that name a project page
+        (lib.captures: Keep and Tasks checklist edits, memory reconcile notes; round 2 N7b), so the run opens the right
+        memory files at once. Best effort: any failure means no hint."""
         out = {}
         try:
             shas = {e["path"]: e["sha"] for e in tree if e["type"] == "blob"}
             for path in paths:
-                if not re.search(r"Z-(keep|memory-reconcile)-[a-z0-9-]+\.md$", path) or "-keep-note-" in path:
+                hk = host_kind(path)
+                if not hk or not carries_page(hk[0]):
                     continue
                 note = self.blob_text(shas[path])
                 mt = re.search(r"^(?:project|page):\s*(?:wiki/projects/)?([a-z0-9-]+?)(?:\.md)?\s*$", note, re.M)
@@ -749,11 +735,11 @@ class Relay:
                 parts = parts[:MAX_POST_CHUNKS]
                 parts[-1] = parts[-1][:1800] + f"\n… (continued: <{link}>)"
             # Resume where a failed tick stopped (2026-09-16): a post error now fails the tick instead of being
-            # retried inside the session, so remember how many parts of this file are already in #vault. Each part
+            # retried inside the session, so remember how many parts of this file are already posted. Each part
             # also carries a stable key, so a part whose reply was lost is not duplicated when it is sent again.
             # The counter is tied to the file VERSION (blob sha; code review of 74c4123): if the file changed
             # after a partial post, start again from part 0 so the new version arrives whole and in order (the old
-            # version's partial parts stay in #vault above it; they are not deleted), and the sha in the key keeps
+            # version's partial parts stay in the channel above it; they are not deleted), and the sha in the key keeps
             # Discord's nonce check from handing back a part of the old version.
             progress = self.state.setdefault("posting", {})
             rec = progress.get(e["path"])

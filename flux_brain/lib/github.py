@@ -11,8 +11,6 @@ entries and growing with raw/) is served from memory or from `cache_file` (the r
 this the relay fetched the whole tree every 15 s and the Keep daemon every 30 s.
 """
 import base64
-import json
-import os
 import shutil
 import subprocess
 import urllib.parse
@@ -21,14 +19,16 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
+from ..config import CFG
 from .state import load_json, save_json
 
 __all__ = ["GITHUB", "REPO", "BRANCH", "COMMITTER", "gh_token", "session", "GitHub"]
 
 GITHUB = "https://api.github.com"
-from ..config import CFG
 REPO = CFG.vault_repo
-BRANCH = "main"
+# flux.toml [vault] branch. Was a hard-coded "main" until 2026-09-24: the setting only reached the relay's outbound
+# links, every client read and wrote main whatever the file said.
+BRANCH = CFG.vault_branch
 # Authored as the owner, like every host-side write: routines may only push to main when all commits are his.
 COMMITTER = {"name": CFG.owner_name, "email": CFG.git_email}
 

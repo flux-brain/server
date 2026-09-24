@@ -1,5 +1,5 @@
-# Flux server configuration (v1 target). Copy to $FLUX_HOME/flux.toml. No secrets here: they go in flux.env.
-# Every value below replaces a literal that today sits in the scripts (see INVENTORY.md).
+# Flux server configuration. Copy to $FLUX_HOME/flux.toml. No secrets here: they go in flux.env.
+# Every instance-specific value lives in this file or in flux.env; the code contains none.
 
 [owner]
 name = "Your Name"                 # how the relay and the routine refer to you
@@ -32,7 +32,6 @@ lock_dir = "/run/lock"
 [modules]
 drive = false                      # attachments to cloud storage (Google Drive today)
 memory = false                     # memory mirror + page/memory reconcile
-keep = false                       # Google Keep checklists (experimental: unofficial API)
 gmail = false                      # Gmail label feed
 tasks = false                      # Google Tasks list per active project (official API)
 
