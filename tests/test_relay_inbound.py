@@ -2,6 +2,7 @@
 retried strictly MESSAGE_GIVE_UP-1 times, then filed with the attachment listed as not fetched, so the queue never
 blocks for good. No network: Discord, the download session, Drive and GitHub are fakes."""
 import pytest
+import requests
 
 import flux_brain.relay as m
 from fakes import Resp
@@ -25,8 +26,8 @@ B = {"id": "101", "author": {"bot": False}, "type": 0, "content": "plain note",
 
 @pytest.fixture
 def make(monkeypatch):
-    monkeypatch.setattr(m, "save_state", lambda st: None)
-    monkeypatch.setattr(m, "extract_text", lambda data, mime, name: ("some text", "PDF text layer"))
+    monkeypatch.setattr(m.state, "save_state", lambda st: None)
+    monkeypatch.setattr(m.inbound, "extract_text", lambda data, mime, name: ("some text", "PDF text layer"))
     monkeypatch.setattr(m.CFG, "mod_drive", True)   # these cases exercise the Drive path; test_drive covers the module-off line
 
     def relay(state, msgs, fail_urls):
@@ -51,7 +52,7 @@ def test_poisoned_attachment_two_strict_failures_then_lenient_filing(make):
     st = {"last_message_id": "99"}
     r = make(st, [A, B], {A["attachments"][0]["url"]})
     for attempt in (1, 2):
-        with pytest.raises(m.requests.HTTPError):
+        with pytest.raises(requests.HTTPError):
             r.inbound("C")
         assert st["last_message_id"] == "99" and not r.puts, f"attempt {attempt}: queue not advanced, nothing filed"
         assert st["message_failures"] == {"100": attempt}
@@ -65,7 +66,7 @@ def test_poisoned_attachment_two_strict_failures_then_lenient_filing(make):
 def test_transient_failure_second_attempt_files_normally(make):
     st = {"last_message_id": "99"}
     r = make(st, [A], {A["attachments"][0]["url"]})
-    with pytest.raises(m.requests.HTTPError):
+    with pytest.raises(requests.HTTPError):
         r.inbound("C")
     r.s.fail.clear()   # the CDN answers now
     n = r.inbound("C")

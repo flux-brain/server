@@ -67,7 +67,7 @@ def test_relay_attachment_line_module_off_and_on(monkeypatch):
     r.state, puts = {}, []
     r.s = type("S", (), {"get": lambda self, url, **kw: DL()})()
     r.put_file = lambda path, data, msg: puts.append(path)
-    monkeypatch.setattr(m, "extract_text", lambda data, mime, name: ("hello", "PDF text"))
+    monkeypatch.setattr(m.inbound, "extract_text", lambda data, mime, name: ("hello", "PDF text"))
     ts = dt.datetime(2026, 9, 22, tzinfo=dt.timezone.utc)
     msg, att = {"id": "1"}, {"url": "https://cdn/x.pdf", "size": 2048, "content_type": "application/pdf"}
     monkeypatch.setattr(CFG, "mod_drive", False)

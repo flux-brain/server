@@ -8,9 +8,11 @@ work, the reconcile coalescing timer, the memory applier trigger and the two-cha
 No network: requests.post, time.sleep and save_state are replaced per test, so the live state file is never touched.
 """
 import datetime as dt
+import subprocess
 import time
 
 import pytest
+import requests
 
 import flux_brain.relay as m
 from fakes import Resp
@@ -30,9 +32,9 @@ class Harness:
                 return Resp(200, {"claude_code_session_url": "https://claude.ai/code/cse_X"})
             self.calls.append(("discord", kw["json"], url))   # url: channel routing tests
             return self.queue.pop(0) if self.queue else Resp(200)
-        monkeypatch.setattr(m.requests, "post", fake_post)
-        monkeypatch.setattr(m.time, "sleep", lambda s: self.sleeps.append(s))
-        monkeypatch.setattr(m, "save_state", lambda st: self.saves.append(len(self.calls)))
+        monkeypatch.setattr(requests, "post", fake_post)   # discord.post and fire.maybe_fire both call requests.post
+        monkeypatch.setattr(time, "sleep", lambda s: self.sleeps.append(s))
+        monkeypatch.setattr(m.state, "save_state", lambda st: self.saves.append(len(self.calls)))
 
     def relay(self, state=None):
         r = m.Relay.__new__(m.Relay)
@@ -94,7 +96,7 @@ def test_no_key_no_nonce(h):
 
 def test_502_sent_once_and_raises(h):
     h.queue[:] = [Resp(502)]
-    with pytest.raises(m.requests.HTTPError):
+    with pytest.raises(requests.HTTPError):
         h.relay().post("C", "hi", key="k")
     assert len(h.calls) == 1
 
@@ -107,7 +109,7 @@ def test_short_429_sleeps_then_one_retry(h):
 
 def test_long_429_raises_without_sleep(h):
     h.queue[:] = [Resp(429, {"retry_after": 60})]
-    with pytest.raises(m.requests.HTTPError):
+    with pytest.raises(requests.HTTPError):
         h.relay().post("C", "hi", key="k")
     assert len(h.calls) == 1 and h.sleeps == []
 
@@ -118,7 +120,7 @@ def test_outbound_resumes_at_failed_part_with_same_nonces(h):
     r = h.relay(st)
     r.blob_text = lambda sha: BODY3
     h.queue[:] = [Resp(200), Resp(502)]
-    with pytest.raises(m.requests.HTTPError):
+    with pytest.raises(requests.HTTPError):
         r.outbound("C", TREE)
     first_nonces = [c[1]["nonce"] for c in h.calls]
     assert st["posting"] == {LONG: {"sha": "s1", "done": 1}} and "posted" not in st
@@ -138,7 +140,7 @@ def test_outbound_already_posted_and_stale_counter_dropped(h):
 
 
 def test_run_link_posted_after_the_start_is_saved(h, monkeypatch):
-    monkeypatch.setattr(m, "datetime", FixedDT)
+    monkeypatch.setattr(m.fire, "datetime", FixedDT)
     r = h.relay()
     r.maybe_fire(1, "C")
     disc = [i for i, c in enumerate(h.calls) if c[0] == "discord"]
@@ -157,7 +159,7 @@ def test_file_changed_after_partial_post_restarts_from_part_0(h):
     r = h.relay(st)
     r.blob_text = lambda sha: BODY3
     h.queue[:] = [Resp(200), Resp(502)]
-    with pytest.raises(m.requests.HTTPError):
+    with pytest.raises(requests.HTTPError):
         r.outbound("C", TREE)
     old_nonces = [c[1]["nonce"] for c in h.calls]
     h.calls.clear()
@@ -256,7 +258,7 @@ def test_no_clock_windows_any_more(h, monkeypatch, hh, mm):
         @classmethod
         def now(cls, tz=None):
             return dt.datetime(2026, 9, 17, hh, mm, 30, tzinfo=dt.timezone.utc)
-    monkeypatch.setattr(m, "datetime", DTW)
+    monkeypatch.setattr(m.fire, "datetime", DTW)
     st = {"fire_pending": True}
     h.relay(st).maybe_fire(0, "C", [blob(TYPED)])
     assert h.fired()
@@ -367,7 +369,7 @@ def test_reconcile_only_start_waits_owner_capture_carries_it(h):
 
 def test_memory_proposal_starts_the_applier_once_detached(h, monkeypatch, tmp_path):
     popens = []
-    monkeypatch.setattr(m.subprocess, "Popen", lambda cmd, **kw: popens.append((cmd, kw)))
+    monkeypatch.setattr(subprocess, "Popen", lambda cmd, **kw: popens.append((cmd, kw)))
     monkeypatch.setattr(m.CFG, "log_dir", tmp_path)   # the applier's log file goes under the test home
     st = {}
     r = h.relay(st)
