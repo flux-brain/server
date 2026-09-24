@@ -34,7 +34,7 @@ import requests
 # file, so a replayed write is idempotent), one Drive uploader, one state-file writer, the extraction functions
 # (re-exported below so the offline tests can still stub `extract_text` on THIS module), one log().
 from .config import CFG  # noqa: E402
-from .lib.common import log  # noqa: E402
+from .lib.common import log, ops_alert  # noqa: E402  ops_alert lived here until 2026-09-24
 from .lib.secrets import SECRET_PATTERNS  # noqa: E402
 from .lib.state import load_json, save_json  # noqa: E402
 from .lib.captures import RELAY_NOTE, HOST_NOTE, host_kind, describe as describe_kind, carries_page  # noqa: E402
@@ -61,17 +61,6 @@ OUTBOUND_DIRS = ("briefings/daily/", "briefings/weekly/", "notify/")
 # question of 09:53 sat unseen among summaries and run links, because bot posts never notify. Only a notify/ file
 # that IS a question pings; summaries, digests and run links stay silent so the ping keeps its meaning.
 OWNER_DISCORD_ID = CFG.owner_discord_id
-
-
-def ops_alert(text):
-    """Failure alert to the optional ops webhook (flux.env OPS_WEBHOOK_URL). Best effort, never raises; without a
-    webhook the log line is the alert."""
-    if not CFG.ops_webhook:
-        return
-    try:
-        requests.post(CFG.ops_webhook, json={"content": text}, timeout=15)
-    except Exception as exc:  # noqa: BLE001
-        log(f"ops alert not sent ({exc.__class__.__name__})")
 
 
 def is_question(path, body):
