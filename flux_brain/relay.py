@@ -31,8 +31,7 @@ from datetime import datetime, timezone
 import requests
 
 # Shared code since 2026-09-18 (code review item 6): one GitHub client (retries PUTs here: put_file keeps an existing
-# file, so a replayed write is idempotent), one Drive uploader, one state-file writer, the extraction functions
-# (re-exported below so the offline tests can still stub `extract_text` on THIS module), one log().
+# file, so a replayed write is idempotent), one Drive uploader, one state-file writer, the extraction functions, one log().
 from .config import CFG  # noqa: E402
 from .lib.common import log, ops_alert  # noqa: E402  ops_alert lived here until 2026-09-24
 from .lib.secrets import SECRET_PATTERNS  # noqa: E402
@@ -40,8 +39,7 @@ from .lib.state import load_json, save_json  # noqa: E402
 from .lib.captures import RELAY_NOTE, HOST_NOTE, host_kind, describe as describe_kind, carries_page  # noqa: E402
 from .lib.github import GitHub, session  # noqa: E402
 from .lib.drive import Drive  # noqa: E402
-from .lib.extract import *  # noqa: E402,F401,F403  everything in extract.__all__ (extract_text, MAX_ATTACHMENT, ...)
-from .lib.extract import _iwa_blocks, _run  # noqa: E402,F401  private helpers the iWork test exercises
+from .lib.extract import extract_text, attachment_text_file, MAX_ATTACHMENT  # noqa: E402  (tests stub extract_text here)
 
 REPO = CFG.vault_repo
 BRANCH = CFG.vault_branch
