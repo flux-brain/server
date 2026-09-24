@@ -1,8 +1,9 @@
 """Flux configuration: `flux.toml` (settings, committed nowhere but the server) + `flux.env` (secrets, mode 600).
 
-Every instance-specific literal that used to sit in the scripts is resolved here once, at import time, into `CFG`.
-Location: `$FLUX_HOME` (default `/var/lib/flux`); tests point `FLUX_HOME` at a temporary directory that holds a
-minimal `flux.toml`, so no test ever touches a live state file.
+Every instance-specific literal that used to sit in the scripts is resolved here into `CFG`. Since 2026-09-24 nothing
+is read at import time: `CFG` is a proxy to the current `Config`, built from `$FLUX_HOME` (default `/var/lib/flux`) on
+first access, and `load(home)` replaces it, so a test can point the whole package at a temporary home without
+re-importing anything, and no module binds a setting into a constant that a later `load()` could not reach.
 """
 import os
 import pathlib
@@ -33,6 +34,8 @@ def _read_env(path):
 
 
 class Config:
+    """One parsed home. Modules read `CFG.<name>` when they need a value, never at import."""
+
     def __init__(self, home=None):
         self.home = pathlib.Path(home or os.environ.get("FLUX_HOME") or DEFAULT_HOME)
         toml_path = self.home / "flux.toml"
@@ -71,6 +74,9 @@ class Config:
         self.log_dir = self.home / "logs"
         self.lock_dir = pathlib.Path(g("paths", "lock_dir", "/run/lock"))
         self.whisper_dir = str(self.home / "whisper")
+        # derived values the modules used to compute at import
+        self.max_attachment_bytes = self.max_attachment_mb * 1024 * 1024
+        self.max_audio_seconds = self.audio_minutes * 60
         # modules
         self.mod_drive = bool(g("modules", "drive", False))
         self.mod_memory = bool(g("modules", "memory", False))
@@ -96,5 +102,39 @@ class Config:
         if missing:
             raise SystemExit(f"flux: missing in {self.home}/flux.env or flux.toml: {', '.join(missing)}")
 
+    def state_file(self, name):
+        """Path of a state file under $FLUX_HOME/state (each program has one)."""
+        return str(self.state_dir / name)
 
-CFG = Config()
+
+_current = None
+
+
+def load(home=None):
+    """Build the configuration from `home` (default $FLUX_HOME) and make it the one `CFG` reads. Tests call it with a
+    temporary directory; the entry points never need to, the first `CFG` access loads it."""
+    global _current
+    _current = Config(home)
+    return _current
+
+
+def current():
+    return _current if _current is not None else load()
+
+
+class _Proxy:
+    """`CFG`: attribute reads and writes go to the current Config, so `CFG.vault_repo` is always the loaded value and a
+    test's `monkeypatch.setattr(CFG, "mod_drive", True)` lands on it too."""
+    __slots__ = ()
+
+    def __getattr__(self, name):
+        return getattr(current(), name)
+
+    def __setattr__(self, name, value):
+        setattr(current(), name, value)
+
+    def __repr__(self):
+        return f"<CFG {current().home}>"
+
+
+CFG = _Proxy()

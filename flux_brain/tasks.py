@@ -38,11 +38,8 @@ from .lib.state import load_json, save_json
 
 TASKS = "https://tasks.googleapis.com/tasks/v1"
 SCOPE = "https://www.googleapis.com/auth/tasks"
-TOKEN = CFG.tasks_token_file
-STATE_FILE = str(CFG.state_dir / "tasks-state.json")
-PREFIX = CFG.tasks_prefix            # list title prefix, "📁 " by default
-TICK = CFG.tasks_tick                # seconds between ticks
-SETTLE = CFG.tasks_settle            # a list must be unchanged this long before its edits are filed
+# Token file, state file, list prefix ("📁 " by default), tick and settle seconds: flux.toml [tasks] through CFG at
+# call time (2026-09-24).
 PENDING_TTL = 2 * 3600               # a filed edit the page never reflected expires after this
 PAGES = re.compile(r"^wiki/projects/([a-z0-9-]+)\.md$")
 MAX_TITLE = 1000                     # Tasks caps a title at 1024 bytes
@@ -154,6 +151,10 @@ def email_id(link):
     return m.group(1) if m else None
 
 
+def state_file():
+    return CFG.state_file("tasks-state.json")
+
+
 def stamp(t=None):
     return datetime.fromtimestamp(t or time.time(), timezone.utc)
 
@@ -188,9 +189,9 @@ def checklist_capture(slug, page, list_id, events, owner):
 class TasksApi:
     """Thin client. The token file is read once; the access token is refreshed in memory per process (lib.google)."""
 
-    def __init__(self, s, token_path=TOKEN):
+    def __init__(self, s, token_path=None):
         self.s = s
-        self.token = GoogleToken(s, token_path, "Tasks", "flux-tasks-auth")
+        self.token = GoogleToken(s, token_path or CFG.tasks_token_file, "Tasks", "flux-tasks-auth")
 
     def headers(self):
         return self.token.headers()
@@ -283,7 +284,7 @@ class Sync:
         return self._lists
 
     def find_or_create_list(self, p, title):
-        want = PREFIX + title
+        want = CFG.tasks_prefix + title
         if p.get("list_id"):
             return p["list_id"], False
         lid = self.list_by_title().get(want)
@@ -344,14 +345,14 @@ class Sync:
         if page["status"] != "active":
             # paused / done: rename once, stop polling (quota), keep the tasks as they are
             if p.get("list_id") and p.get("marked") != page["status"]:
-                self.api.rename_list(p["list_id"], f"{PREFIX}{page['title']} ({page['status']})")
+                self.api.rename_list(p["list_id"], f"{CFG.tasks_prefix}{page['title']} ({page['status']})")
                 p["marked"] = page["status"]
             p.update(page=page, page_sha=entry["sha"])
             return
         lid, created = self.find_or_create_list(p, page["title"])
         p["list_id"] = lid
         if p.get("marked"):
-            self.api.rename_list(lid, PREFIX + page["title"])
+            self.api.rename_list(lid, CFG.tasks_prefix + page["title"])
             p.pop("marked")
         cur = snapshot(self.api.tasks(lid))
         filed = False
@@ -365,7 +366,7 @@ class Sync:
                 if not u or u["hash"] != h:
                     p["unsettled"] = {"hash": h, "since": time.time()}
                     return   # the owner may still be editing
-                if time.time() - u["since"] < SETTLE:
+                if time.time() - u["since"] < CFG.tasks_settle:
                     return
                 self.hand_off_emails(slug, cur, events, p)
                 path = f"inbox/{stamp():%Y-%m-%dT%H%M%SZ}-tasks-{slug}.md"
@@ -377,7 +378,7 @@ class Sync:
                                          "capture": path, "filed": time.time()}
                 p["snapshot"] = cur
                 p.pop("unsettled", None)
-                save_json(STATE_FILE, self.st)
+                save_json(state_file(), self.st)
                 log(f"{slug}: filed {len(events)} Tasks edit(s) as {path}")
                 filed = True
             else:
@@ -432,19 +433,19 @@ class Sync:
         inbox = {e["path"] for e in tree if e["path"].startswith("inbox/")}
         for slug, entry in sorted(pages.items()):
             self.project(slug, entry, inbox)
-            save_json(STATE_FILE, self.st)   # per project: a failure later in the tick keeps what was rendered
+            save_json(state_file(), self.st)   # per project: a failure later in the tick keeps what was rendered
         for slug in [s for s in self.st["projects"] if s not in pages]:
             p = self.st["projects"][slug]
             if p.get("list_id") and not p.get("gone"):
-                self.api.rename_list(p["list_id"], f"{PREFIX}{p.get('title', slug)} (page removed)")
+                self.api.rename_list(p["list_id"], f"{CFG.tasks_prefix}{p.get('title', slug)} (page removed)")
                 p["gone"] = True
-        save_json(STATE_FILE, self.st)
+        save_json(state_file(), self.st)
 
 
 def main():
     if not CFG.mod_tasks:
         raise SystemExit("flux: the Tasks module is off ([modules] tasks = false in flux.toml); nothing to do")
-    st = load_json(STATE_FILE, {})
+    st = load_json(state_file(), {})
     sync = Sync(st)
     failures = 0
     while True:
@@ -461,11 +462,11 @@ def main():
             sync._lists = None
         if ONCE:
             return 0
-        time.sleep(TICK)
+        time.sleep(CFG.tasks_tick)
 
 
 def auth_main(argv=None):
     """`flux-tasks-auth <client_secret.json>`: one-time consent (scope tasks only) that writes tasks-token.json.
     Same Desktop OAuth client as flux-drive-auth; enable the Tasks API on the project first. The rest is in lib.google."""
-    return consent_main(argv, "flux-tasks-auth", [SCOPE], TOKEN,
+    return consent_main(argv, "flux-tasks-auth", [SCOPE], CFG.tasks_token_file,
                         "set [modules] tasks = true in flux.toml and enable flux-tasks.service.")

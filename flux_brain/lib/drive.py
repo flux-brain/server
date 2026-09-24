@@ -11,17 +11,20 @@ Works with a shared drive (`[drive] drive_id` set) and with a folder in "My Driv
 from ..config import CFG
 from .google import GoogleToken, consent_main
 
-__all__ = ["DRIVE_FOLDER", "DRIVE_DRIVE_ID", "DRIVE_TOKEN", "Drive", "auth_main"]
+__all__ = ["Drive", "auth_main"]
 
-DRIVE_FOLDER = CFG.drive_folder_id   # flux.toml [drive] folder_id: where attachment originals go
-DRIVE_DRIVE_ID = CFG.drive_id        # flux.toml [drive] drive_id (shared drive) or "" for My Drive
-DRIVE_TOKEN = CFG.drive_token_file   # OAuth token written by flux-drive-auth (INSTALL.md)
 SCOPE = "https://www.googleapis.com/auth/drive.file"   # only files this app created or was handed; never the whole Drive
 
 
 class Drive:
-    def __init__(self, session, token_path=DRIVE_TOKEN, folder=DRIVE_FOLDER, drive_id=DRIVE_DRIVE_ID):
-        self.s, self.token_path, self.folder, self.drive_id = session, token_path, folder, drive_id
+    def __init__(self, session, token_path=None, folder=None, drive_id=None):
+        # None = the flux.toml [drive] values (token_file, folder_id, drive_id), read here and not at import; "" is a
+        # real value for drive_id (My Drive), so the test is `is None`.
+        self.s = session
+        self.token_path = CFG.drive_token_file if token_path is None else token_path
+        self.folder = CFG.drive_folder_id if folder is None else folder
+        self.drive_id = CFG.drive_id if drive_id is None else drive_id
+        token_path, folder, drive_id = self.token_path, self.folder, self.drive_id
         self.token = GoogleToken(session, token_path, "Drive", "flux-drive-auth")
         if not folder:
             raise SystemExit("flux: Drive module is on but [drive] folder_id is empty in flux.toml")
@@ -59,5 +62,5 @@ class Drive:
 def auth_main(argv=None):
     """`flux-drive-auth <client_secret.json>`: one-time consent (scope drive.file only: files this app creates) that
     writes $FLUX_HOME/drive-token.json. Enable the Drive API on the Cloud project first; the rest is in lib.google."""
-    return consent_main(argv, "flux-drive-auth", [SCOPE], DRIVE_TOKEN,
+    return consent_main(argv, "flux-drive-auth", [SCOPE], CFG.drive_token_file,
                         "set [modules] drive = true and [drive] folder_id in flux.toml.")

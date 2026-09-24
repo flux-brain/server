@@ -22,15 +22,9 @@ from urllib3.util.retry import Retry
 from ..config import CFG
 from .state import load_json, save_json
 
-__all__ = ["GITHUB", "REPO", "BRANCH", "COMMITTER", "gh_token", "session", "GitHub"]
+__all__ = ["GITHUB", "gh_token", "session", "GitHub"]
 
 GITHUB = "https://api.github.com"
-REPO = CFG.vault_repo
-# flux.toml [vault] branch. Was a hard-coded "main" until 2026-09-24: the setting only reached the relay's outbound
-# links, every client read and wrote main whatever the file said.
-BRANCH = CFG.vault_branch
-# Authored as the owner, like every host-side write: routines may only push to main when all commits are his.
-COMMITTER = {"name": CFG.owner_name, "email": CFG.git_email}
 
 
 def gh_token(user=None):
@@ -54,8 +48,12 @@ def session(retry_writes=False):
 
 
 class GitHub:
-    def __init__(self, repo=REPO, branch=BRANCH, retry_writes=False, cache_file=None, user=None):
-        self.repo, self.branch, self.user = repo, branch, user
+    def __init__(self, repo=None, branch=None, retry_writes=False, cache_file=None, user=None):
+        # flux.toml [vault] repo / branch, read here and not at import (2026-09-24). The branch was a hard-coded "main"
+        # until 2026-09-24: the setting only reached the relay's outbound links.
+        self.repo, self.branch, self.user = repo or CFG.vault_repo, branch or CFG.vault_branch, user
+        # Authored as the owner, like every host-side write: routines may only push to main when all commits are theirs.
+        self.committer = {"name": CFG.owner_name, "email": CFG.git_email}
         self.s = session(retry_writes)
         self.auth()
         self.cache_file = cache_file
@@ -102,7 +100,7 @@ class GitHub:
         """Create a file; an EXISTING file is kept as is (422 "sha wasn't supplied"), which is what makes a re-run
         after a crash idempotent (the relays name files after message ids)."""
         body = {"message": message, "branch": self.branch, "content": base64.b64encode(data).decode(),
-                "committer": COMMITTER}
+                "committer": self.committer}
         r = self.s.put(self._contents_url(path), headers=self.h, json=body, timeout=60)
         if r.status_code == 422 and "sha" in r.text:
             return False
@@ -112,7 +110,7 @@ class GitHub:
     def put(self, path, text, message, sha=None):
         """Create or, with `sha`, replace a file compare-and-swap style (409 when the file moved meanwhile)."""
         body = {"message": message, "branch": self.branch, "content": base64.b64encode(text.encode()).decode(),
-                "committer": COMMITTER}
+                "committer": self.committer}
         if sha:
             body["sha"] = sha
         r = self.s.put(self._contents_url(path), headers=self.h, json=body, timeout=60)

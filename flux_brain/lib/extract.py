@@ -14,7 +14,7 @@ import tempfile
 from .common import SECRET_PATTERNS, log
 from ..config import CFG
 
-MAX_ATTACHMENT = CFG.max_attachment_mb * 1024 * 1024  # larger files are skipped and flagged in the note (both relays)
+# Larger files than CFG.max_attachment_bytes are skipped and flagged in the note (both relays).
 
 # Text extraction (2026-09-15): the routines cannot open Drive, so the relay puts the TEXT of PDFs
 # and images into the capture note. Poppler (pdftotext/pdfinfo/pdftoppm) + tesseract CLI, the same
@@ -44,8 +44,8 @@ IWORK_NOISE = re.compile(r"^(?:[EGyMdhHmsaz ,./:\'-]+|[A-Za-z]+(?:[ -][A-Za-z]+)
                          r"|SF ?UI.*|Helvetica.*|Times.*|.*(?:Stylesheet|Placeholder|Bullet|Theme).*)$")
 IWORK_RUN = re.compile(r"[^\x00-\x08\x0b-\x1f\x7f]{12,}")
 MAX_IWORK_CHARS = 60000
-WHISPER_DIR = CFG.whisper_dir  # model "small" is downloaded there on first use (464 MB)
-MAX_AUDIO_SECONDS = CFG.audio_minutes * 60  # transcribe at most the first N minutes (flux.toml capture.audio_minutes)
+# The whisper model ("small", 464 MB) is downloaded into CFG.whisper_dir on first use; at most CFG.max_audio_seconds
+# are transcribed (flux.toml capture.audio_minutes). Both read at call time, not at import (2026-09-24).
 MAX_SHEET_ROWS = 2000
 _WHISPER = None                                # loaded on first audio file only (~2 s, ~1 GB RAM)
 
@@ -94,12 +94,12 @@ def transcribe(path):
     if _WHISPER is None:
         # cpu_threads=3 leaves a core for the rest of the host; int8 keeps RAM near 1 GB
         _WHISPER = WhisperModel("small", device="cpu", compute_type="int8",
-                                download_root=WHISPER_DIR, cpu_threads=3)
+                                download_root=CFG.whisper_dir, cpu_threads=3)
     segments, info = _WHISPER.transcribe(path, vad_filter=True, beam_size=1)
     out = []
     for seg in segments:
-        if seg.start > MAX_AUDIO_SECONDS:
-            out.append(f"[... stopped after {MAX_AUDIO_SECONDS // 60} minutes]")
+        if seg.start > CFG.max_audio_seconds:
+            out.append(f"[... stopped after {CFG.max_audio_seconds // 60} minutes]")
             break
         out.append(f"[{int(seg.start) // 60:02d}:{int(seg.start) % 60:02d}] {seg.text.strip()}")
     method = (f"Whisper small transcript, language {info.language} "
@@ -289,4 +289,4 @@ def extracted_section(extracts):
         parts.append(f"\n### {name} ({method}{extra})\n\n~~~~text\n{text or '(no text found)'}\n~~~~\n")
     return "".join(parts)
 
-__all__ = ['MAX_ATTACHMENT', 'OCR_LANGS', 'OCR_DPI', 'MIN_PAGE_CHARS', 'MAX_TEXT_PAGES', 'MAX_OCR_PAGES', 'MAX_EXTRACT_CHARS', 'IMAGE_EXTS', 'DOC_EXTS', 'AUDIO_EXTS', 'IWORK_EXTS', 'IWORK_BODY', 'IWORK_NOISE', 'IWORK_RUN', 'MAX_IWORK_CHARS', 'WHISPER_DIR', 'MAX_AUDIO_SECONDS', 'MAX_SHEET_ROWS', 'extract_pdf_or_image', 'transcribe', 'extract_document', 'extract_iwork', 'extract_text', 'attachment_text_file', 'extracted_section']
+__all__ = ['OCR_LANGS', 'OCR_DPI', 'MIN_PAGE_CHARS', 'MAX_TEXT_PAGES', 'MAX_OCR_PAGES', 'MAX_EXTRACT_CHARS', 'IMAGE_EXTS', 'DOC_EXTS', 'AUDIO_EXTS', 'IWORK_EXTS', 'IWORK_BODY', 'IWORK_NOISE', 'IWORK_RUN', 'MAX_IWORK_CHARS', 'MAX_SHEET_ROWS', 'extract_pdf_or_image', 'transcribe', 'extract_document', 'extract_iwork', 'extract_text', 'attachment_text_file', 'extracted_section']
