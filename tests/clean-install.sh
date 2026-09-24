@@ -2,7 +2,7 @@
 # Clean-host install test: follows INSTALL.md literally on a fresh Ubuntu 24.04 (apt packages, flux user, venv,
 # pip install from the published repository, example config files, unit file), then exercises what a new operator
 # would hit: import, config parsing, one `flux-relay` tick with placeholder secrets (must end on a Discord 401, not on
-# a Python error), the loop script, the offline suites in the venv, flux-ask, and the external tools.
+# a Python error), the loop script, the offline tests in the venv, flux-ask, and the external tools.
 #
 # Run it in a throwaway container from the repository root (needs Docker and network access):
 #   docker run --rm -v "$PWD/tests/clean-install.sh:/clean-install.sh:ro" ubuntu:24.04 bash /clean-install.sh
@@ -43,7 +43,7 @@ su -s /bin/bash flux -c 'cd /var/lib/flux && FLUX_HOME=/var/lib/flux timeout 20 
 test -s /var/lib/flux/logs/relay.log && ok "logs/relay.log written: $(tail -n 1 /var/lib/flux/logs/relay.log | cut -c1-100)" || bad "no relay.log"
 
 step "7. test suite in the venv (needs cramjam etc. from the install)"
-su -s /bin/bash flux -c 'cd /var/lib/flux/src && PYTHON=/var/lib/flux/venv/bin/python tests/run_all.sh && /var/lib/flux/venv/bin/pip install -q "/var/lib/flux/src[dev]" && /var/lib/flux/venv/bin/python -m pytest -q' && ok "tests pass in the venv (run_all.sh, then pytest)" || bad "tests"
+su -s /bin/bash flux -c 'cd /var/lib/flux/src && /var/lib/flux/venv/bin/pip install -q "/var/lib/flux/src[dev]" && /var/lib/flux/venv/bin/python -m pytest -q -p no:cacheprovider' && ok "tests pass in the venv (pytest)" || bad "tests"
 
 step "8. flux-ask guards with the installed package"
 su -s /bin/bash flux -c 'cd /var/lib/flux && PATH=/var/lib/flux/venv/bin:$PATH FLUX_HOME=/var/lib/flux bash /var/lib/flux/venv/bin/flux-ask "bad slug" x; echo "exit=$?"' 2>&1 | tail -2
