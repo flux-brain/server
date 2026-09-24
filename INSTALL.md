@@ -56,7 +56,8 @@ in `#flux` and watch it react within 15 seconds.
      APIs & Services > Credentials > Create credentials > **OAuth client ID** > type **Desktop app**;
      download the client secret JSON. If the consent screen is in "Testing", add your own Google
      account as a test user.
-  2. On a machine with a browser: `pip install 'flux-brain[drive]'`, then
+  2. On a machine with a browser: `pip install 'flux-brain[google]'` (the extra the three consent commands
+     need; `[drive]` is its old name and still works), then
      `flux-drive-auth client_secret.json`. It opens the consent page (scope `drive.file` only: files
      this app creates) and writes `drive-token.json` (mode 600) into `FLUX_HOME`. Copy that file to
      the server's `/var/lib/flux/` if you ran it elsewhere, owner `flux`, mode 600.
