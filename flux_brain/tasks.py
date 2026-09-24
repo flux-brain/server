@@ -31,10 +31,8 @@ import sys
 import time
 from datetime import datetime, timezone
 
-import requests
-
 from .config import CFG
-from .lib.common import log
+from .lib.common import log, ops_alert
 from .lib.github import GitHub, session
 from .lib.secrets import SECRET_PATTERNS
 from .lib.state import load_json, save_json
@@ -453,14 +451,6 @@ class Sync:
                 self.api.rename_list(p["list_id"], f"{PREFIX}{p.get('title', slug)} (page removed)")
                 p["gone"] = True
         save_json(STATE_FILE, self.st)
-
-
-def ops_alert(text):
-    if CFG.ops_webhook:
-        try:
-            requests.post(CFG.ops_webhook, json={"content": text}, timeout=15)
-        except Exception as exc:  # noqa: BLE001
-            log(f"ops alert not sent ({exc.__class__.__name__})")
 
 
 def main():

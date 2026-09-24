@@ -39,12 +39,11 @@ import requests
 # Shared code since 2026-09-18 (code review item 6): this script used to exec-load the Discord relay module and
 # instantiate its class without __init__ to borrow the GitHub/Drive methods and the converters.
 from .config import CFG  # noqa: E402
-from .lib.common import log  # noqa: E402
+from .lib.common import log, ops_alert  # noqa: E402  the same optional ops webhook as the relay
 from .lib.secrets import SECRET_PATTERNS  # noqa: E402
 from .lib.state import load_json, save_json  # noqa: E402
 from .lib.github import GitHub, session  # noqa: E402
 from .lib.drive import Drive  # noqa: E402
-from .relay import ops_alert  # noqa: E402  the same optional ops webhook as the Discord relay
 from .lib.extract import extract_text, extract_document, attachment_text_file, MAX_ATTACHMENT  # noqa: E402
 
 
