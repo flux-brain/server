@@ -6,6 +6,7 @@ minimal `flux.toml`, so no test ever touches a live state file.
 """
 import os
 import pathlib
+import sys
 import tomllib
 
 DEFAULT_HOME = "/var/lib/flux"
@@ -35,7 +36,13 @@ class Config:
     def __init__(self, home=None):
         self.home = pathlib.Path(home or os.environ.get("FLUX_HOME") or DEFAULT_HOME)
         toml_path = self.home / "flux.toml"
-        t = tomllib.loads(toml_path.read_text()) if toml_path.exists() else {}
+        if toml_path.exists():
+            t = tomllib.loads(toml_path.read_text())
+        else:
+            # Defaults keep the tests and a first `flux-relay` tick working, but on a host they mean a wrong FLUX_HOME:
+            # say so once per process instead of quietly talking to the placeholder repository (2026-09-24).
+            t = {}
+            print(f"flux: {toml_path} not found, running with defaults (is FLUX_HOME right?)", file=sys.stderr, flush=True)
         env = _read_env(self.home / "flux.env")
         g = lambda sect, key, default=None: t.get(sect, {}).get(key, default)  # noqa: E731
         # owner
@@ -67,7 +74,6 @@ class Config:
         # modules
         self.mod_drive = bool(g("modules", "drive", False))
         self.mod_memory = bool(g("modules", "memory", False))
-        self.mod_keep = bool(g("modules", "keep", False))
         self.mod_gmail = bool(g("modules", "gmail", False))
         self.mod_tasks = bool(g("modules", "tasks", False))
         self.drive_id = g("drive", "drive_id", "")
@@ -83,7 +89,6 @@ class Config:
         # secrets
         self.github_token = env.get("GITHUB_TOKEN", "")
         self.ops_webhook = env.get("OPS_WEBHOOK_URL", "")
-        self.kuma = {k[5:].lower(): v for k, v in env.items() if k.startswith("KUMA_")}
 
     def require(self, *names):
         """Fail early with a readable message when a needed secret is missing (called by the entry points, not at import)."""

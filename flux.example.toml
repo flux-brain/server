@@ -32,7 +32,6 @@ lock_dir = "/run/lock"
 [modules]
 drive = false                      # attachments to cloud storage (Google Drive today)
 memory = false                     # memory mirror + page/memory reconcile
-keep = false                       # Google Keep checklists (experimental: unofficial API)
 gmail = false                      # Gmail label feed
 tasks = false                      # Google Tasks list per active project (official API)
 

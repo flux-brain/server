@@ -1,6 +1,4 @@
 """Logging and the secret definition shared by every Flux script."""
-import os
-import sys
 from datetime import datetime, timezone
 
 from .secrets import SECRET_PATTERNS  # noqa: E402  the one definition

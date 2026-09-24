@@ -71,4 +71,4 @@ body="$(printf '%s\n\n(Question posée depuis une session Claude Code sur le ser
 gh api -X PUT "repos/${REPO}/contents/${path}" \
   -f message="notify: ${stamp}-question-${slug} (vault-ask)" \
   -f content="$(printf '%s' "$body" | base64 -w0)" \
-  --jq '"posted " + .content.path + " @ " + .commit.sha[0:8] + " (Discord #vault within ~15 s)"'
+  --jq '"posted " + .content.path + " @ " + .commit.sha[0:8] + " (Discord, conversation channel, within ~15 s)"'
