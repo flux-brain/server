@@ -16,6 +16,9 @@ What it does, every 15 seconds:
 - **Google Tasks (module):** every active project page is a Tasks list you can tick and edit on your phone;
   edits come back as captures, page changes go out to the list. Drag an email into a project's list and it is
   filed under that project with its attachments.
+- **Google Calendar (module):** one file per day, `calendar/YYYY-MM-DD.md`, for today and the week ahead,
+  read-only; the daily digest opens with the day's events and what the vault knows about the people and
+  projects involved. A day that has ended is kept as it stood.
 - **`flux-ask`:** lets a Claude Code session ask you a question in `#flux` without touching Discord.
 
 ## Install
@@ -39,6 +42,7 @@ those two files; the code contains none.
 | Drive attachments | shipped (`flux-drive-auth`) | Google Cloud OAuth client, a folder |
 | Gmail feed | shipped (`flux-gmail`, `flux-gmail-auth`) | Gmail API, scope gmail.modify |
 | Google Tasks checklists | shipped (`flux-tasks`, `flux-tasks-auth`) | Tasks API, scope tasks |
+| Google Calendar day files | shipped (`flux-calendar`, `flux-calendar-auth`) | Calendar API, two read-only scopes (events, calendar list) |
 | Google Keep checklists | not shipped | no public API; replaced by Tasks |
 | Memory mirror + reconcile | not shipped | Claude Code file-based memory store |
 
