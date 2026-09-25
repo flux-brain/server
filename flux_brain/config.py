@@ -82,6 +82,7 @@ class Config:
         self.mod_memory = bool(g("modules", "memory", False))
         self.mod_gmail = bool(g("modules", "gmail", False))
         self.mod_tasks = bool(g("modules", "tasks", False))
+        self.mod_calendar = bool(g("modules", "calendar", False))
         self.drive_id = g("drive", "drive_id", "")
         self.drive_folder_id = g("drive", "folder_id", "")
         self.drive_token_file = str(self.home / g("drive", "token_file", "drive-token.json"))
@@ -92,6 +93,16 @@ class Config:
         self.tasks_prefix = g("tasks", "prefix", "📁 ")
         self.tasks_tick = int(g("tasks", "tick_s", 60))
         self.tasks_settle = int(g("tasks", "settle_s", 45))
+        # Calendar module (2026-09-25): which calendars ("all", "selected" or a list of ids), the window, the time zone
+        # (empty = the primary calendar's), whether attendees + descriptions are written, the vault folder.
+        self.calendar_token_file = str(self.home / g("calendar", "token_file", "calendar-token.json"))
+        self.calendar_calendars = g("calendar", "calendars", "selected")
+        self.calendar_exclude = list(g("calendar", "exclude", []))
+        self.calendar_lookahead = int(g("calendar", "lookahead_days", 7))
+        self.calendar_timezone = g("calendar", "timezone", "")
+        self.calendar_details = bool(g("calendar", "details", False))
+        self.calendar_max_desc = int(g("calendar", "max_description", 1000))
+        self.calendar_dir = g("calendar", "dir", "calendar").strip("/")
         # secrets
         self.github_token = env.get("GITHUB_TOKEN", "")
         self.ops_webhook = env.get("OPS_WEBHOOK_URL", "")

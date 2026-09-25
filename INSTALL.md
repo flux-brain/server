@@ -37,7 +37,7 @@ sudo cp systemd/*.service /etc/systemd/system/ && sudo systemctl enable --now fl
 ```
 
 `pip install` puts these commands in the venv: `flux-relay` (one tick), `flux-relay-loop` (what the unit
-runs), `flux-ask`, and the module commands `flux-gmail`, `flux-tasks`, `flux-drive-auth`, `flux-gmail-auth`, `flux-tasks-auth`. Before enabling the unit, run one tick by hand as the `flux` user:
+runs), `flux-ask`, and the module commands `flux-gmail`, `flux-tasks`, `flux-calendar`, `flux-drive-auth`, `flux-gmail-auth`, `flux-tasks-auth`, `flux-calendar-auth`. Before enabling the unit, run one tick by hand as the `flux` user:
 
 ```
 sudo -u flux FLUX_HOME=/var/lib/flux /var/lib/flux/venv/bin/flux-relay
@@ -86,6 +86,22 @@ in `#flux` and watch it react within 15 seconds.
   keeps a task attached to its action through rewords and what rebuilds the mapping if the state file is
   lost. Quota: about (1 + active projects) API calls per tick; the default 60 s tick keeps 25 projects
   under the 50,000 calls a day. Paused and done projects are renamed once and not polled.
+- **Google Calendar** (the day's events, read-only): one file per day, `calendar/YYYY-MM-DD.md`, for today
+  and `lookahead_days` ahead, rewritten only when the calendar changed; a day that has ended is never written
+  again. Not a capture: it never starts a run; the digest and the weekly review read it.
+  1. Enable the **Google Calendar API** on the Cloud project; reuse the Desktop OAuth client.
+  2. On a machine with a browser: `flux-calendar-auth client_secret.json` (two read-only scopes,
+     `calendar.events.readonly` and `calendar.calendarlist.readonly`: the module cannot change a calendar).
+     Copy `calendar-token.json` to the server if needed, owner `flux`, mode 600.
+  3. `flux.toml`: `[modules] calendar = true`; `[calendar] calendars` = `"selected"` (the calendars ticked in
+     Google Calendar, the default), `"all"`, or a list of ids; `exclude`, `lookahead_days`, `timezone`.
+  4. Privacy: `details = true` also writes attendees and descriptions. Both are written by other people and
+     land in your private vault repository and its history; the vault template treats `calendar/` as data,
+     never instructions. Private and confidential events, and events you declined, are never written.
+  5. One pass by hand, nothing written to GitHub: `sudo -u flux FLUX_HOME=/var/lib/flux CALENDAR_DRY=1
+     CALENDAR_DRY_DIR=/tmp /var/lib/flux/venv/bin/flux-calendar`, read the files, then
+     `sudo cp systemd/flux-calendar.* /etc/systemd/system/ && sudo systemctl enable --now flux-calendar.timer`
+     (every 30 minutes; log in `$FLUX_HOME/logs/calendar.log`).
 - **Google Keep**: not shipped. Keep has no public API for personal accounts; the only route is an
   unofficial library with a full-account master token, which is why this project uses Tasks instead.
 - **Gmail feed**: label a conversation in Gmail and it is filed as one capture (messages oldest first,

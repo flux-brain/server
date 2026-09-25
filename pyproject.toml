@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "flux-brain"
-version = "0.1.0"
+version = "0.2.0"
 description = "Flux server side: the Discord relay that connects a capture channel to a vault repository maintained by Claude Code routines"
 readme = "README.md"
 license = "Apache-2.0"
@@ -22,7 +22,7 @@ dependencies = [
 
 [project.optional-dependencies]
 audio = ["faster-whisper>=1.0"]        # voice memo transcription (downloads the "small" model, ~460 MB, on first use)
-google = ["google-auth-oauthlib>=1.2"]    # the three consent commands (flux-drive-auth, flux-gmail-auth, flux-tasks-auth); API calls use plain requests
+google = ["google-auth-oauthlib>=1.2"]    # the four consent commands (flux-drive-auth, flux-gmail-auth, flux-tasks-auth, flux-calendar-auth); API calls use plain requests
 drive = ["google-auth-oauthlib>=1.2"]     # the old name of the same extra, kept so `pip install "flux-brain[drive]"` still works
 dev = ["pytest>=8"]
 
@@ -33,6 +33,8 @@ flux-gmail = "flux_brain.gmail:main"                 # the Gmail module, one pas
 flux-gmail-auth = "flux_brain.gmail:auth_main"       # one-time Gmail consent (needs the `google` extra)
 flux-tasks = "flux_brain.tasks:main"                 # the Tasks module (long-running, flux-tasks.service)
 flux-tasks-auth = "flux_brain.tasks:auth_main"       # one-time Tasks consent (needs the `google` extra)
+flux-calendar = "flux_brain.calendar:main"           # the Calendar module, one pass (run by flux-calendar.timer)
+flux-calendar-auth = "flux_brain.calendar:auth_main" # one-time Calendar consent, two read-only scopes (needs the `google` extra)
 
 [tool.setuptools]
 script-files = ["bin/flux-relay-loop", "bin/flux-ask"]   # shell helpers installed next to flux-relay
