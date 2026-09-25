@@ -34,6 +34,7 @@ drive = false                      # attachments to cloud storage (Google Drive 
 memory = false                     # memory mirror + page/memory reconcile
 gmail = false                      # Gmail label feed
 tasks = false                      # Google Tasks list per active project (official API)
+calendar = false                   # Google Calendar -> one dated file per day in the vault (read-only)
 
 [drive]                            # when modules.drive = true
 drive_id = ""
@@ -50,6 +51,16 @@ token_file = "tasks-token.json"
 prefix = "📁 "                      # list title prefix
 tick_s = 60                        # seconds between ticks; (1 + active projects) calls per tick, 50k/day quota
 settle_s = 45                      # a list must be unchanged this long before its edits are filed
+
+[calendar]                         # when modules.calendar = true
+token_file = "calendar-token.json"
+calendars = "selected"             # "all", "selected" (ticked in Google Calendar) or a list of calendar ids
+exclude = []                       # calendar ids to skip (e.g. a holidays calendar)
+lookahead_days = 7                 # today + this many days, one file each: calendar/YYYY-MM-DD.md
+timezone = ""                      # IANA name; empty = the primary calendar's time zone
+details = false                    # true = attendees + description too (text written by other people)
+max_description = 1000             # characters of description kept per event
+dir = "calendar"                   # vault folder
 
 [monitoring]                       # optional; empty = no pings, no alerts
 ops_webhook_env = "OPS_WEBHOOK_URL"   # name of the env var holding a Discord webhook for failure alerts

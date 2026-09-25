@@ -1,0 +1,17 @@
+[Unit]
+Description=Flux Calendar module: one pass (Google Calendar -> vault calendar/YYYY-MM-DD.md, read-only)
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=flux
+Group=flux
+Environment=FLUX_HOME=/var/lib/flux
+ExecStart=/usr/bin/flock -n /run/lock/flux-calendar.lock /var/lib/flux/venv/bin/flux-calendar
+StandardOutput=append:/var/lib/flux/logs/calendar.log
+StandardError=inherit
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/flux /run/lock
+PrivateTmp=true
+NoNewPrivileges=true
