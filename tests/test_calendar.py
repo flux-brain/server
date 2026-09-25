@@ -115,6 +115,7 @@ def test_run_writes_one_file_per_day(conf):
             timed("Secret thing", "2026-09-25T12:00:00+02:00", "2026-09-25T13:00:00+02:00", visibility="private"),
             timed("Declined", "2026-09-25T14:00:00+02:00", "2026-09-25T15:00:00+02:00",
                   attendees=[{"email": "me@example.com", "self": True, "responseStatus": "declined"}]),
+            timed("Reminder", "2026-09-25T16:00:00+02:00", "2026-09-25T16:00:00+02:00"),
             timed("Late train", "2026-09-26T23:00:00+02:00", "2026-09-27T01:00:00+02:00"),
         ],
         "family@group.calendar.google.com": [allday("School trip", "2026-09-25", "2026-09-27")],
@@ -129,6 +130,7 @@ def test_run_writes_one_file_per_day(conf):
     assert "  - with: Anna" in d25 and "room@" not in d25 and "  - notes: Prep the deck" in d25
     assert "Secret thing" not in d25 and "Declined" not in d25
     assert d25.index("School trip") < d25.index("Call with Anna")   # all-day first
+    assert "- 16:00 **Reminder** (Personal)" in d25                 # zero length: one time, not 16:00-16:00
     d26 = gh.files["calendar/2026-09-26.md"]
     assert "School trip" in d26 and "- 23:00-27/09 01:00 **Late train**" in d26
     d27 = gh.files["calendar/2026-09-27.md"]

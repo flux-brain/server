@@ -168,7 +168,7 @@ def render_day(day, items, details, max_desc):
         else:
             # An event that began before this day or ends after it shows the clock time with its date
             fmt = lambda t: t.strftime("%H:%M") if t.date() == day else t.strftime("%d/%m %H:%M")  # noqa: E731
-            when = f"{fmt(start)}-{fmt(end)}"
+            when = fmt(start) if end <= start else f"{fmt(start)}-{fmt(end)}"   # a reminder-style event has no length
         loc, r = one_line(ev.get("location", ""), 200)
         redacted |= r
         lines.append(f"- {when} **{title}** ({cal})" + (f" · {loc}" if loc else ""))
