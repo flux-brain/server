@@ -89,6 +89,9 @@ class Config:
         self.gmail_label = g("gmail", "label", "📁 Flux")
         self.gmail_filed_label = g("gmail", "filed_label", "📁 Flux/Filed")
         self.gmail_token_file = str(self.home / g("gmail", "token_file", "gmail-token.json"))
+        # false: an email and its attachments stay in Gmail only (the capture links the message); the text is still
+        # extracted into the vault. Default true keeps the original behaviour (copies in Drive when the Drive module is on).
+        self.gmail_originals_to_drive = bool(g("gmail", "originals_to_drive", True))
         self.tasks_token_file = str(self.home / g("tasks", "token_file", "tasks-token.json"))
         self.tasks_prefix = g("tasks", "prefix", "📁 ")
         self.tasks_tick = int(g("tasks", "tick_s", 60))

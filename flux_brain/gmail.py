@@ -7,6 +7,8 @@ Run from cron every minute under flock. Each run:
   3. per message: the original .eml goes to Google Drive (shared drive Vault > folder Claude), its text
      (headers + body) goes into the capture, and each real attachment goes through the SAME pipeline as a
      Discord attachment (Drive upload, text extraction, raw/attachments/<name>.md), reusing the relay's code;
+     with [gmail] originals_to_drive = false (or the Drive module off) nothing goes to Drive: the email and its
+     attachments stay in Gmail, linked per message, and only their text is written to the vault;
   4. writes inbox/<date>-gmail-<newest message id>.md, then swaps the labels Vault -> Vault/Filed so the
      mail shows as filed in Gmail and a lost state file cannot refile it.
 
@@ -142,7 +144,8 @@ class GmailRelay:
         self.st = st
         self.s = session()          # GET retries only; the Gmail writes below are idempotent by construction anyway
         self.gh = GitHub()           # put_file keeps an existing file: a re-run after a crash never duplicates
-        self.drive = Drive(self.s) if CFG.mod_drive else None   # originals to Drive only with the Drive module
+        # originals to Drive only with the Drive module AND [gmail] originals_to_drive (else they stay in Gmail, linked)
+        self.drive = Drive(self.s) if CFG.mod_drive and CFG.gmail_originals_to_drive else None
         # Exchanged here, not lazily: a missing or revoked token must fail the run before any label is read (lib.google)
         self.h = GoogleToken(self.s, CFG.gmail_token_file, "Gmail", "flux-gmail-auth").headers()
 
@@ -224,7 +227,8 @@ class GmailRelay:
             subject = subject or str(msg["Subject"] or "(no subject)")
             when = datetime.fromtimestamp(ts_ms / 1000, timezone.utc)
             eml_name = f"{stamp}-gmail-{mid}.eml"
-            eml_link = "(dry run)" if DRY else (self.drive.upload(eml_name, data, "message/rfc822") if self.drive else f"https://mail.google.com/mail/u/0/#all/{thread_id}")
+            gmail_msg_link = f"https://mail.google.com/mail/u/0/#all/{mid}"   # this one message, in Gmail
+            eml_link = "(dry run)" if DRY else (self.drive.upload(eml_name, data, "message/rfc822") if self.drive else gmail_msg_link)
             try:
                 body, _ = extract_document(data, "eml", ".eml")  # headers + plain/HTML body, same as Discord .eml
             except Exception as exc:  # noqa: BLE001 - a malformed MIME tree must not block filing
@@ -245,8 +249,8 @@ class GmailRelay:
                     msg_missing.append((name, "over 20 MB, not converted; open it in Gmail"))
                     continue
                 drive_name = f"{stamp}-gmail-{mid}-{name}"
-                link = "(dry run)" if DRY else (self.drive.upload(drive_name, blob, mime or "application/octet-stream") if self.drive else f"https://mail.google.com/mail/u/0/#all/{thread_id}")
-                entry = f"- [{name}]({link}) ({mime}, {kb} KB, " + ("original in Google Drive)" if self.drive else "original stays in Gmail)")
+                link = "(dry run)" if DRY else (self.drive.upload(drive_name, blob, mime or "application/octet-stream") if self.drive else gmail_msg_link)
+                entry = f"- [{name}]({link}) ({mime}, {kb} KB, " + ("original in Google Drive)" if self.drive else "original in Gmail, attached to the email)")
                 att_text, method = extract_with_retry(blob, mime, name)
                 if method and att_text.strip():
                     n_text += 1
@@ -265,7 +269,9 @@ class GmailRelay:
                     entry += ", no text (type not converted)"
                 lines.append(entry)
             sec = [f"### {when:%Y-%m-%d %H:%M} UTC, message {mid}", "",
-                   f"Original email in Google Drive: [{eml_name}]({eml_link})", "", "~~~~text", body.strip(), "~~~~"]
+                   (f"Original email in Google Drive: [{eml_name}]({eml_link})" if self.drive else
+                    f"Original email, with its attachments, in Gmail: [open message]({eml_link})"),
+                   "", "~~~~text", body.strip(), "~~~~"]
             if lines:
                 sec += ["", "#### Attachments", *lines]
             sec += missing_text_note(msg_missing)
