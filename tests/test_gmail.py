@@ -164,3 +164,56 @@ def test_tasks_hand_off_files_the_thread_under_the_project(monkeypatch):
     fr = FakeRelay()
     path = fr.file_message_id("abc123", project="project-x")
     assert path == "inbox/x-gmail-m2.md" and fr.filed_args == ("T9", ["m1", "m2"], "project-x", "tasks") and set(fr.st["filed"]) == {"m1", "m2"}
+
+
+# ---------- where the originals go ([gmail] originals_to_drive, 2026-09-26, the owner: "for gmail, keep attachments
+# with original email") ----------
+
+def _relay_with_one_email(monkeypatch, mod_drive, to_drive):
+    """A GmailRelay built through its real __init__ with Drive, GitHub, the Gmail token and the converter faked, fed one
+    email with one PDF attachment. Returns (relay, drive uploads, GitHub puts)."""
+    uploads, puts = [], []
+
+    class FakeDrive:
+        def __init__(self, s):
+            pass
+
+        def upload(self, name, data, mime):
+            uploads.append(name)
+            return f"https://drive.example/{name}"
+
+    monkeypatch.setattr(gr, "DRY", False)
+    monkeypatch.setattr(gr, "session", lambda: None)
+    monkeypatch.setattr(gr, "GitHub", lambda: types.SimpleNamespace(put_file=lambda p, d, m: puts.append((p, d.decode()))))
+    monkeypatch.setattr(gr, "Drive", FakeDrive)
+    monkeypatch.setattr(gr, "GoogleToken", lambda *a: types.SimpleNamespace(headers=lambda: {}))
+    monkeypatch.setattr(gr, "extract_with_retry", lambda blob, mime, name: ("invoice text", "text layer"))
+    monkeypatch.setattr(gr.CFG, "mod_drive", mod_drive)
+    monkeypatch.setattr(gr.CFG, "gmail_originals_to_drive", to_drive)
+    m = EmailMessage()
+    m["Subject"], m["From"], m["To"] = "Invoice", "a@example.com", "b@example.com"
+    m.set_content("see attached")
+    m.add_attachment(b"%PDF-1.4 fake", maintype="application", subtype="pdf", filename="invoice.pdf")
+    raw = gr.base64.urlsafe_b64encode(m.as_bytes()).decode()
+    r = gr.GmailRelay({"filed": {}})
+    r.api = lambda method, path, **kw: {"internalDate": "1790000000000", "raw": raw}
+    return r, uploads, puts
+
+
+def test_originals_stay_in_gmail_when_originals_to_drive_is_false(monkeypatch):
+    r, uploads, puts = _relay_with_one_email(monkeypatch, mod_drive=True, to_drive=False)
+    ids, path = r.file_thread("T1", ["m1"])
+    assert uploads == [] and r.drive is None                      # nothing copied to Drive
+    capture = dict(puts)[path]
+    text_file = next(d for p, d in puts if p.startswith("raw/attachments/"))
+    assert "#all/m1" in capture and "Google Drive" not in capture   # the message itself, in Gmail
+    assert "Original email, with its attachments, in Gmail" in capture
+    assert "original in Gmail, attached to the email" in capture
+    assert "invoice text" in text_file and "#all/m1" in text_file   # text still extracted, linked to the email
+
+
+def test_originals_go_to_drive_by_default(monkeypatch):
+    r, uploads, puts = _relay_with_one_email(monkeypatch, mod_drive=True, to_drive=True)
+    ids, path = r.file_thread("T1", ["m1"])
+    assert len(uploads) == 2 and uploads[0].endswith("-gmail-m1.eml") and uploads[1].endswith("-invoice.pdf")
+    assert "Original email in Google Drive" in dict(puts)[path]

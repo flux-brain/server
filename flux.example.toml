@@ -45,6 +45,7 @@ token_file = "drive-token.json"    # relative to paths.home
 label = "📁 Flux"
 filed_label = "📁 Flux/Filed"
 token_file = "gmail-token.json"
+originals_to_drive = true          # false: emails and their attachments stay in Gmail only (text still extracted)
 
 [tasks]                            # when modules.tasks = true
 token_file = "tasks-token.json"
