@@ -82,6 +82,10 @@ in `#flux` and watch it react within 15 seconds.
      feed starts); the captures print instead of being written.
   3. Enable `systemd/flux-drive-watch.timer` (every 5 minutes). New files are filed once they have gone
      `settle_s` without an edit; edits to a file that was filed already are not filed again.
+- **Follow-ups** (sent emails still waiting for an answer, listed in `followups/waiting.md` for the daily digest):
+  needs the Gmail token. Set `[modules] followups = true`, enable `systemd/flux-followups.timer` (hourly). It reads
+  only your own sent threads and their replies; newsletters and no-reply addresses are skipped. Label a thread with
+  `[followups] dismiss_label` in Gmail to drop it. `FOLLOWUPS_DRY=1 flux-followups` prints the list instead.
 - **Memory mirror**: only meaningful if you use Claude Code with a file-based memory store; documented
   separately (v2).
 - **Google Tasks** (the checklist view of your projects): one Tasks list per active project page,
