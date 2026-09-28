@@ -35,6 +35,7 @@ from bs4 import BeautifulSoup
 from .config import CFG
 from .lib.common import log, ops_alert, redact
 from .lib.github import GitHub, session
+from .lib.gmailapi import NOREPLY, GmailApi, gmail_link, header
 from .lib.google import GoogleToken, consent_main
 from .lib.state import load_json, save_json
 
@@ -149,8 +150,10 @@ def one_line(text, limit):
     return text, bool(n)
 
 
-def render_day(day, items, details, max_desc):
-    """The Markdown for one day. `items`: (event, calendar name, start, end) with start/end None for all-day."""
+def render_day(day, items, details, max_desc, mail=None):
+    """The Markdown for one day. `items`: (event, calendar name, start, end) with start/end None for all-day.
+    `mail` (meeting prep, 2026-09-28): {attendee address: (date, subject, link)} of the last email exchanged with
+    that person, shown under the event; None or {} = no such lines."""
     lines = ["---", "source: calendar", f"date: {day.isoformat()}", "---", "",
              f"# {day.strftime('%A')} {day.isoformat()}", "",
              "> Written by the Flux Calendar module from Google Calendar. Titles, descriptions and attendee names",
@@ -180,6 +183,12 @@ def render_day(day, items, details, max_desc):
                 who, r = one_line(", ".join(people), 500)
                 redacted |= r
                 lines.append(f"  - with: {who}")
+            for a in [a for a in ev.get("attendees", []) if (a.get("email") or "").lower() in (mail or {})][:3]:
+                when, subject, link = mail[a["email"].lower()]
+                name, r1 = one_line(a.get("displayName") or a["email"], 100)
+                subj, r2 = one_line(subject, 200)
+                redacted |= r1 or r2
+                lines.append(f"  - last email with {name}: {when}, \"{subj}\" ([Gmail]({link}))")
             desc, r = one_line(ev.get("description", ""), max_desc)
             redacted |= r
             if desc:
@@ -205,7 +214,32 @@ def bucket(events_by_cal, tz, days):
 
 
 # ---------- run ----------
-def run(api, gh, now=None):
+MAIL_LOOKUPS = 15      # attendees looked up per run (two Gmail calls each)
+
+
+def last_emails(gmail, items):
+    """{address: (YYYY-MM-DD, subject, link)} of the newest email exchanged with each other attendee of `items`
+    (people only: not the owner, not rooms or group calendars, not no-reply addresses), at most MAIL_LOOKUPS."""
+    own = gmail.owner_addresses()
+    wanted = []
+    for ev, _cal, _s, _e in items:
+        for a in ev.get("attendees", []):
+            addr = (a.get("email") or "").lower()
+            if (addr and not a.get("self") and not a.get("resource") and addr not in own and addr not in wanted
+                    and not addr.endswith("calendar.google.com") and not NOREPLY.match(addr)):
+                wanted.append(addr)
+    out = {}
+    for addr in wanted[:MAIL_LOOKUPS]:
+        hits = gmail.search(f"from:{addr} OR to:{addr}", limit=1)
+        if not hits:
+            continue
+        msg = gmail.message(hits[0]["id"], headers=("Subject",))
+        when = datetime.fromtimestamp(int(msg.get("internalDate", 0)) / 1000, timezone.utc).strftime("%Y-%m-%d")
+        out[addr] = (when, header(msg, "Subject") or "(no subject)", gmail_link(msg.get("threadId", hits[0]["id"])))
+    return out
+
+
+def run(api, gh, now=None, gmail=None):
     """One pass. Returns the list of paths written."""
     cals = pick_calendars(api.calendars(), CFG.calendar_calendars, CFG.calendar_exclude)
     tz = owner_tz(cals, CFG.calendar_timezone)
@@ -215,9 +249,17 @@ def run(api, gh, now=None):
     t_max = datetime.combine(days[-1] + timedelta(days=1), datetime.min.time(), tz)
     events = [(c.get("summaryOverride") or c.get("summary") or c["id"], api.events(c["id"], t_min, t_max)) for c in cals]
     per_day = bucket(events, tz, days)
+    mail = {}
+    if CFG.calendar_details and CFG.calendar_mail_context:
+        try:   # meeting prep is a bonus: a Gmail failure never costs the day files
+            mail = last_emails(gmail or GmailApi(session(), CFG.gmail_token_file),
+                               [i for d in days[:CFG.calendar_mail_context_days] for i in per_day[d]])
+        except Exception as exc:  # noqa: BLE001
+            log(f"meeting prep skipped ({exc.__class__.__name__})")
     written = []
     for d in days:
-        text = render_day(d, per_day[d], CFG.calendar_details, CFG.calendar_max_desc)
+        prep = mail if d in days[:CFG.calendar_mail_context_days] else None
+        text = render_day(d, per_day[d], CFG.calendar_details, CFG.calendar_max_desc, prep)
         path = f"{CFG.calendar_dir}/{d.isoformat()}.md"
         if DRY:
             out = os.path.join(os.environ.get("CALENDAR_DRY_DIR", "."), os.path.basename(path))
