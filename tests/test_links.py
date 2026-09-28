@@ -145,3 +145,20 @@ def test_default_off_and_module_off_leave_links_alone(relay, monkeypatch):
     r2.drive = None   # Drive module off: nothing to look up with
     r2.file_message("c", msg(DOC_URL, mid="201"))
     assert "## Links" not in note_of(r2)
+
+
+def test_minus_text_is_a_whole_word_and_wins():
+    assert L.refuses_text("-text") and not L.refuses_text("pre-text") and not L.refuses_text("-texts")
+    assert L.text_wanted("text", "a link") and not L.text_wanted("text", "a link -text")
+    assert L.text_wanted("details", "+text") and not L.text_wanted("details", "a link")
+    assert not L.text_wanted("details", "+text -text")
+
+
+def test_text_mode_copies_by_default_and_minus_text_opts_out(relay, monkeypatch):
+    monkeypatch.setattr(m.CFG, "drive_links", "text")
+    r = relay()
+    r.file_message("c", msg(DOC_URL))
+    assert r.exports == [(DOC, "text/plain")] and "text: [[raw/attachments/" in note_of(r)
+    r2 = relay()
+    r2.file_message("c", msg(f"{DOC_URL} -text", mid="201"))
+    assert r2.exports == [] and "## Links" in note_of(r2) and "text:" not in note_of(r2)

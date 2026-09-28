@@ -5,11 +5,12 @@ A link is only an address to the routine, which has no Google access by design, 
 the vault as a URL and nothing else. With `[drive] links = "details"` the relay looks each linked file up with the
 Drive token and adds its name, type, folder and last edit to the capture (`## Links`); the file itself stays in Drive.
 Its text is copied into the vault only when the message also carries the word `+text`, because a copy in the
-repository syncs to every device and no longer follows later edits to the original.
+repository syncs to every device and no longer follows later edits to the original. With `links = "text"` the text is
+copied by default instead, and the word `-text` asks for the details only.
 """
 import re
 
-__all__ = ["drive_links", "wants_text", "MAX_LINKS", "kind_label", "EXPORTS"]
+__all__ = ["drive_links", "wants_text", "refuses_text", "text_wanted", "MAX_LINKS", "kind_label", "EXPORTS"]
 
 MAX_LINKS = 5                      # links looked up per message; the rest stay plain URLs in the message text
 
@@ -22,6 +23,7 @@ _PATTERNS = [
     (re.compile(r"https://drive\.google\.com/drive/(?:u/\d+/)?folders/" + _ID), True),
 ]
 _PLUS_TEXT = re.compile(r"(?<!\S)\+text(?!\S)", re.I)
+_MINUS_TEXT = re.compile(r"(?<!\S)-text(?!\S)", re.I)
 
 # Google-native types: how their text is exported. Sheets go out as xlsx, not csv: a csv export holds the FIRST sheet
 # only, while the xlsx converter in lib.extract reads every sheet.
@@ -57,6 +59,19 @@ def drive_links(text):
 def wants_text(text):
     """True when the message carries the word `+text` (the owner asks for the linked files' text in the vault)."""
     return bool(_PLUS_TEXT.search(text or ""))
+
+
+def refuses_text(text):
+    """True when the message carries the word `-text` (details only, even when text is the default)."""
+    return bool(_MINUS_TEXT.search(text or ""))
+
+
+def text_wanted(mode, text):
+    """Whether this message's linked files get their text copied: `+text` asks for it, `-text` refuses it (and wins
+    over `+text`), otherwise the mode decides ("text" = yes, "details" = no)."""
+    if refuses_text(text):
+        return False
+    return mode == "text" or wants_text(text)
 
 
 def kind_label(mime):
