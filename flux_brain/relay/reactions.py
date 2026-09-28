@@ -12,7 +12,9 @@ from ..config import CFG
 from ..lib import buttons
 from ..lib.common import log
 
-REACTION_EVERY = 60          # seconds between checks (the loop ticks every 15 s; one GET per tracked post and emoji)
+REACTION_EVERY = 60          # seconds between scans for NEW taps (one GET per tracked post and emoji; the loop ticks
+                             # every 15 s). A tap waiting out its grace period is re-checked on every call instead, so
+                             # a short grace (e.g. 30 s) is honoured to within one loop tick.
 WAIT, DONE = "⏳", "👌"
 
 
@@ -33,12 +35,15 @@ class ReactionsMixin:
     def check_reactions(self, now=None):
         """Returns the number of actions emitted. Never raises: a Discord blip only delays a button by a minute."""
         now = now or time.time()
-        if now - self.state.get("reactions_checked", 0) < REACTION_EVERY:
+        scan = now - self.state.get("reactions_checked", 0) >= REACTION_EVERY
+        entries = buttons.tracked()
+        if not scan and not any(t.get("pending") for _, t in entries):
             return 0
-        self.state["reactions_checked"] = now
+        if scan:
+            self.state["reactions_checked"] = now
         n = 0
         try:
-            for path, t in buttons.tracked():
+            for path, t in entries:
                 if t.get("expires", 0) < now and not t.get("pending"):
                     buttons.untrack(path)
                     continue
@@ -59,6 +64,8 @@ class ReactionsMixin:
                         self._mark(t, DONE, True)
                         log(f"button {pend['emoji']} on {t['message']} -> {t['module']}")
                         n += 1
+                    continue
+                if not scan:
                     continue
                 for emoji in t.get("actions", {}):
                     who = self._reactors(t, emoji)
