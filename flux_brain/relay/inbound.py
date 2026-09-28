@@ -7,7 +7,7 @@ from ..config import CFG
 from ..lib.common import log
 from ..lib.secrets import SECRET_PATTERNS
 from ..lib.extract import extract_text, attachment_text_file   # (tests stub extract_text on this module)
-from ..lib.links import drive_links, wants_text, kind_label, EXPORTS
+from ..lib.links import drive_links, text_wanted, kind_label, EXPORTS
 from . import state
 
 MESSAGE_GIVE_UP = 3                # (2026-09-17 code review fix 2) strict filing attempts for ONE message before its
@@ -102,7 +102,8 @@ class InboundMixin:
 
     def link_entry(self, m, url, fid, folder, want_text, stamp, ts, lenient):
         """One `## Links` line for a Google Drive / Docs link ([drive] links = "details", 2026-09-28): the file's name,
-        type, folder and last edit, looked up with the Drive token; its text too when the message says `+text`.
+        type, folder and last edit, looked up with the Drive token; its text too when text_wanted() says so (`+text`,
+        or `links = "text"` unless the message says `-text`).
         A failed LOOKUP never blocks the note (the link is in the message anyway): the line says why. A failed TEXT
         export, which the owner asked for, follows the attachment rule: strict (raise) until the last attempt."""
         try:
@@ -180,11 +181,11 @@ class InboundMixin:
                 lines.append(f"- attachment `{name}` NOT fetched or stored after {MESSAGE_GIVE_UP} attempts "
                              f"({exc.__class__.__name__}); it is still on the Discord message, ask the owner to re-post it if it matters")
         link_lines = []
-        if CFG.drive_links == "details" and getattr(self, "drive", None) is not None:
+        if CFG.drive_links in ("details", "text") and getattr(self, "drive", None) is not None:
             links = drive_links(text)
             if links:
                 self.seen(channel, m["id"])   # lookups (and a +text export) take a moment
-                want = wants_text(text)
+                want = text_wanted(CFG.drive_links, text)
                 link_lines = [self.link_entry(m, url, fid, folder, want, stamp, ts, lenient) for url, fid, folder in links]
         refs = ""
         if m.get("referenced_message"):  # a reply, e.g. answering a question Claude posted

@@ -68,7 +68,8 @@ in `#flux` and watch it react within 15 seconds.
      file. A missing token or folder id fails the tick with a one-line message naming the fix.
   5. Optional, **Drive links**: set `[drive] links = "details"` and a Google Docs, Sheets, Slides or Drive
      link in a message gets a `## Links` line in the capture (name, type, folder, last edit); add the word
-     `+text` to the message to copy the file's text into `raw/attachments/` too. The file itself stays in
+     `+text` to the message to copy the file's text into `raw/attachments/` too. With `links = "text"` the
+     text is copied by default and the word `-text` asks for the details only. The file itself stays in
      Drive. This needs a token that can READ the linked files (scope `drive.readonly` or `drive`): the
      `drive.file` token of step 2 sees only files this app created, so every lookup would answer 404 and
      the line would say "not accessible". Point `[drive] token_file` at such a token, or leave `links` off.
