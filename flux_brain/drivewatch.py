@@ -18,6 +18,12 @@ Each run (cron or a systemd timer, every 5 minutes by default, under flock):
 New files only: an edited file that was filed already is not filed again (post its link to refresh it). A file that
 was filed is remembered by id; the list keeps the last MAX_FILED ids.
 
+Folder suggestions (2026-09-28, `suggest = true`): the list improves with time. While reading the feed, the module
+counts the files the OWNER changed per folder (the feed says who: `lastModifyingUser.me`), whatever the folder. Every
+`suggest_every_days`, the busiest folders outside the watched ones (at least `suggest_min_files` files, at most
+`suggest_max`, never one in `never`) are posted in the capture channel with a ✅ button (flux_brain.lib.buttons). A
+tap adds the folder to `extra_folders` in the state file, watched from the next run on; flux.toml is never edited.
+
 Config (`flux.toml`):
     [modules] drive_watch = true
     [drive_watch]
@@ -36,6 +42,7 @@ import sys
 from datetime import datetime, timezone
 
 from .config import CFG
+from .lib import buttons
 from .lib.common import log, ops_alert
 from .lib.drive import Drive
 from .lib.extract import extract_text
@@ -49,7 +56,8 @@ MAX_FILED = 2000
 MAX_DEPTH = 20                      # parent hops before giving up (a Drive tree is never this deep in practice)
 FOLDER = "application/vnd.google-apps.folder"
 CHANGE_FIELDS = ("nextPageToken,newStartPageToken,changes(fileId,removed,file(id,name,mimeType,modifiedTime,parents,"
-                 "driveId,trashed,ownedByMe))")
+                 "driveId,trashed,ownedByMe,lastModifyingUser(me)))")
+ADD = "✅"
 DRY = os.environ.get("DRIVE_WATCH_DRY") == "1"
 
 
@@ -60,8 +68,10 @@ def state_file():
 class Watcher:
     def __init__(self, drive, gh, st, folders=None):
         self.d, self.gh, self.st = drive, gh, st
-        self.folders = {f["id"]: f for f in (CFG.drive_watch_folders if folders is None else folders)}
+        base = CFG.drive_watch_folders if folders is None else folders
+        self.folders = {f["id"]: f for f in base + st.get("extra_folders", [])}
         st.setdefault("filed", [])
+        st.setdefault("activity", {})       # folder id -> [file ids the owner changed there] since the last suggestion
         st.setdefault("pending", {})
         st.setdefault("parents", {})        # folder id -> [name, parent id or "", drive id or ""]
 
@@ -113,6 +123,10 @@ class Watcher:
                 f = ch.get("file") or {}
                 if ch.get("removed") or not f or f.get("trashed") or f.get("mimeType") == FOLDER:
                     continue
+                if CFG.drive_watch_suggest and (f.get("lastModifyingUser") or {}).get("me") and f.get("parents"):
+                    seen = self.st["activity"].setdefault(f["parents"][0], [])
+                    if f["id"] not in seen and len(seen) < 50 and len(self.st["activity"]) < 500:
+                        seen.append(f["id"])
                 if f.get("driveId", "") not in drives:
                     continue
                 if not f.get("driveId") and CFG.drive_watch_owned_only and not f.get("ownedByMe"):
@@ -181,6 +195,76 @@ class Watcher:
         self.put(f"inbox/{stamp}-drive-{fid}.md", note, "inbox: 1 capture from Drive watch")
         log(f"filed Drive file {fid} ({meta.get('mimeType', '')}) from folder {folder.get('id', '?')}")
 
+    # ---------- folder suggestions ----------
+    def path(self, fid):
+        """"Drive > a > b" for a folder id (names from the cache; the drive's own name when it is a shared drive)."""
+        names, cur, hops = [], fid, 0
+        while cur and hops < MAX_DEPTH:
+            name, parent, _ = self.folder_info(cur)
+            names.append(name)
+            cur, hops = parent, hops + 1
+        return " > ".join(reversed(names))
+
+    def suggestions(self, now=None):
+        """[(folder id, path, n files)] due for a suggestion, and resets the counts; [] when not due yet."""
+        now = now or _now()
+        if not CFG.drive_watch_suggest:
+            return []
+        if not self.st.get("suggested_at"):
+            self.st["suggested_at"] = now                  # first run: start counting, suggest after one period
+            return []
+        if now - self.st["suggested_at"] < CFG.drive_watch_suggest_every * 86400:
+            return []
+        asked = set(self.st.get("suggested", []))
+        out = []
+        for fid, files in sorted(self.st["activity"].items(), key=lambda kv: -len(kv[1])):
+            if len(files) < CFG.drive_watch_suggest_min or fid in asked or fid in CFG.drive_watch_never:
+                continue
+            try:
+                if self.watched_ancestor([fid]) or any(a in CFG.drive_watch_never for a in self.ancestors(fid)):
+                    continue
+                out.append((fid, self.path(fid), len(files)))
+            except Exception:  # noqa: BLE001 - a folder we cannot read is not a suggestion
+                continue
+            if len(out) >= CFG.drive_watch_suggest_max:
+                break
+        self.st["activity"], self.st["suggested_at"] = {}, now
+        self.st["suggested"] = (self.st.get("suggested", []) + [f for f, _, _ in out])[-500:]
+        return out
+
+    def ancestors(self, fid):
+        out, cur, hops = [], self.folder_info(fid)[1], 0
+        while cur and hops < MAX_DEPTH:
+            out.append(cur)
+            cur, hops = self.folder_info(cur)[1], hops + 1
+        return out
+
+    def post_suggestions(self, items, bot):
+        for fid, path, n in items:
+            text = (f"📁 You changed {n} files in **{path}** since the last check. Watch this folder? "
+                    f"Tap {ADD}: new files there will be filed like the Meet notes.")
+            if DRY:
+                print(text)
+                continue
+            ch = bot.channel_id(CFG.channel_names, self.st)
+            mid = bot.post(ch, text)
+            bot.react(ch, mid, ADD)
+            buttons.track(mid, ch, "drive-watch", {ADD: {"folder": fid, "path": path}}, 7 * 86400)
+
+    def act(self):
+        """Add the folders the owner tapped ✅ on to the watched list (state `extra_folders`)."""
+        n = 0
+        for path, a in buttons.actions("drive-watch"):
+            fid = a["payload"]["folder"]
+            if fid not in self.folders:
+                self.st.setdefault("extra_folders", []).append({"id": fid})
+                self.folders[fid] = {"id": fid}
+                log(f"drive watch: now watching {a['payload'].get('path', fid)}")
+            if not DRY:
+                buttons.done(path)
+            n += 1
+        return n
+
     def file_bytes(self, fid, export_mime=None):
         return self.d.export(fid, export_mime) if export_mime else self.d.download(fid)
 
@@ -211,8 +295,12 @@ def main():
     try:
         s = session()
         w = Watcher(Drive(s, folder=CFG.drive_folder_id or "unused"), None if DRY else GitHub(), st)
+        w.act()
         q = w.scan()
         n = w.settle_and_file()
+        sug = w.suggestions()
+        if sug:
+            w.post_suggestions(sug, None if DRY else buttons.Bot())
         if q or n:
             log(f"drive watch: {q} queued, {n} filed, {len(st['pending'])} pending")
         st["failures"] = 0

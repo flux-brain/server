@@ -164,3 +164,72 @@ def test_text_off_gives_details_only(cfg, monkeypatch):
     w.scan()
     w.settle_and_file()
     assert len(gh.puts) == 1 and "text:" not in gh.puts[0][1] and "## Links" in gh.puts[0][1]
+
+
+# ---------- folder suggestions ----------
+
+@pytest.fixture
+def sug(cfg, monkeypatch):
+    import shutil
+    shutil.rmtree(CFG.state_dir / "tracked", ignore_errors=True)
+    shutil.rmtree(CFG.state_dir / "actions", ignore_errors=True)
+    monkeypatch.setattr(CFG, "drive_watch_suggest", True)
+    monkeypatch.setattr(CFG, "drive_watch_suggest_every", 7)
+    monkeypatch.setattr(CFG, "drive_watch_suggest_min", 3)
+    monkeypatch.setattr(CFG, "drive_watch_suggest_max", 3)
+    monkeypatch.setattr(CFG, "drive_watch_never", [])
+
+
+def mine(fid, parent, **kw):
+    return {"fileId": fid, "file": f(fid, [parent], lastModifyingUser={"me": True}, **kw)}
+
+
+def test_owner_activity_is_counted_anywhere_and_suggested_weekly(sug):
+    changes = [mine(f"o{i}", OTHER) for i in range(4)] + [mine("s1", SUB)]
+    changes += [{"fileId": "x1", "file": f("x1", [OTHER], lastModifyingUser={"me": False})}]
+    w, _gh, st = watcher(changes, {}, st={"page_token": "t1", "suggested_at": 1.0})
+    w.scan()
+    assert len(st["activity"][OTHER]) == 4 and st["activity"][SUB] == ["s1"]
+    got = w.suggestions(now=1.0 + 8 * 86400)
+    assert got == [(OTHER, "My Drive > Other", 4)]       # SUB is under a watched folder; x1 was not the owner's
+    assert st["activity"] == {} and OTHER in st["suggested"]
+    assert w.suggestions(now=1.0 + 9 * 86400) == []       # not due again for a week
+
+
+def test_first_period_only_starts_counting(sug):
+    w, _gh, st = watcher([], {}, st={"page_token": "t1"})
+    assert w.suggestions(now=100.0) == [] and st["suggested_at"] == 100.0
+
+
+def test_never_list_blocks_a_folder_and_its_children(sug, monkeypatch):
+    monkeypatch.setattr(CFG, "drive_watch_never", ["root"])
+    w, _gh, st = watcher([mine(f"o{i}", OTHER) for i in range(4)], {}, st={"page_token": "t1", "suggested_at": 1.0})
+    w.scan()
+    assert w.suggestions(now=1.0 + 8 * 86400) == []
+
+
+def test_post_and_tap_adds_the_folder(sug):
+    from flux_brain.lib import buttons
+
+    class Bot:
+        def __init__(self):
+            self.posts = []
+
+        def channel_id(self, names, cache):
+            return "c1"
+
+        def post(self, ch, text):
+            self.posts.append(text)
+            return "p1"
+
+        def react(self, ch, mid, e):
+            pass
+    w, _gh, st = watcher([], {}, st={"page_token": "t1"})
+    bot = Bot()
+    w.post_suggestions([(OTHER, "My Drive > Other", 4)], bot)
+    assert "**My Drive > Other**" in bot.posts[0]
+    (_, entry), = buttons.tracked()
+    buttons.emit(entry["module"], "p1", "✅", entry["actions"]["✅"])
+    assert w.act() == 1 and st["extra_folders"] == [{"id": OTHER}] and OTHER in w.folders
+    w2, _gh2, _ = watcher([], {}, st=st)
+    assert OTHER in w2.folders                              # persists in state, flux.toml untouched
