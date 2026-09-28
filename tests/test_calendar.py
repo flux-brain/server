@@ -175,3 +175,36 @@ def test_main_off_and_failure_alert(monkeypatch):
     for _ in range(cal.FAIL_ALERT_AFTER):
         assert cal.main() == 1
     assert len(alerts) == 1
+
+
+# ---------- meeting prep (2026-09-28) ----------
+
+class PrepGmail:
+    def __init__(self):
+        self.queries = []
+
+    def owner_addresses(self):
+        return {"owner@example.com"}
+
+    def search(self, q, limit=500):
+        self.queries.append(q)
+        return [{"id": "m1", "threadId": "t1"}] if "anna@" in q else []
+
+    def message(self, mid, headers=None):
+        return {"internalDate": "1790000000000", "threadId": "t1",
+                "payload": {"headers": [{"name": "Subject", "value": "Lease terms"}]}}
+
+
+def test_last_emails_people_only_and_rendered_under_the_event():
+    from datetime import date
+    ev = {"summary": "Call", "attendees": [
+        {"email": "owner@example.com", "self": True}, {"email": "Anna@firm.example", "displayName": "Anna"},
+        {"email": "room@resource.calendar.google.com", "resource": True}, {"email": "noreply@x.example"},
+        {"email": "bob@firm.example"}]}
+    g = PrepGmail()
+    mail = cal.last_emails(g, [(ev, "Work", None, None)])
+    assert g.queries == ["from:anna@firm.example OR to:anna@firm.example", "from:bob@firm.example OR to:bob@firm.example"]
+    assert list(mail) == ["anna@firm.example"] and mail["anna@firm.example"][1] == "Lease terms"
+    text = cal.render_day(date(2026, 10, 1), [(ev, "Work", None, None)], True, 500, mail)
+    assert '  - last email with Anna: ' in text and '"Lease terms" ([Gmail](https://mail.google.com/mail/u/0/#all/t1))' in text
+    assert "last email" not in cal.render_day(date(2026, 10, 1), [(ev, "Work", None, None)], True, 500, None)
