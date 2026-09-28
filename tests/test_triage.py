@@ -206,3 +206,18 @@ def test_buttons_label_the_thread_and_draft_writes_a_capture(cfg):
     assert path.startswith("inbox/") and path.endswith("-triage-t2.md")
     assert "source: triage" in note and "want: reply-draft" in note and 'thread_id: "t2"' in note
     assert buttons.actions("triage") == []                                    # done: never acted on twice
+
+
+def test_pending_tap_is_rechecked_between_scans(monkeypatch):
+    monkeypatch.setattr(CFG, "button_grace", 30)
+    buttons.track("m6", "c1", "triage", {"✅": {"thread": "t6"}}, 3600)
+    r = relay_with(lambda path: Resp(200, [{"id": OWNER}]))
+    t0 = time.time()
+    r.check_reactions(now=t0)                                         # scan: tap seen, ⏳
+    assert r.check_reactions(now=t0 + 15) == 0                        # re-checked, grace not over
+    assert r.check_reactions(now=t0 + 31) == 1                        # 31 s < REACTION_EVERY: acted anyway
+    buttons.track("m7", "c1", "triage", {"✅": {"thread": "t7"}}, 3600)
+    n = len(r.calls)
+    r.check_reactions(now=t0 + 45)                                    # nothing pending, no scan due: no call
+    assert len(r.calls) == n
+
