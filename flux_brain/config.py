@@ -85,6 +85,7 @@ class Config:
         self.mod_calendar = bool(g("modules", "calendar", False))
         self.mod_drive_watch = bool(g("modules", "drive_watch", False))
         self.mod_followups = bool(g("modules", "followups", False))
+        self.mod_triage = bool(g("modules", "triage", False))
         self.drive_id = g("drive", "drive_id", "")
         self.drive_folder_id = g("drive", "folder_id", "")
         self.drive_token_file = str(self.home / g("drive", "token_file", "drive-token.json"))
@@ -107,6 +108,12 @@ class Config:
         self.followups_ignore = [str(i).lower() for i in g("followups", "ignore", [])]
         self.followups_max_items = int(g("followups", "max_items", 30))
         self.followups_skip_forwards = bool(g("followups", "skip_forwards", True))
+        # Triage module (2026-09-28): new emails that probably matter -> a post with ✅ / ✍️ buttons (flux_brain.triage)
+        self.triage_keywords = [str(k) for k in g("triage", "keywords", [])]
+        self.triage_correspondents_days = int(g("triage", "correspondents_days", 180))
+        self.triage_hours_utc = tuple(g("triage", "hours_utc", [6, 21]))
+        self.triage_max_posts = int(g("triage", "max_posts", 8))
+        self.triage_ttl_days = int(g("triage", "ttl_days", 3))
         self.followups_dir = g("followups", "dir", "followups").strip("/")
         self.gmail_label = g("gmail", "label", "📁 Flux")
         self.gmail_filed_label = g("gmail", "filed_label", "📁 Flux/Filed")

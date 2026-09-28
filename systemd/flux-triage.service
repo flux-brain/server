@@ -1,0 +1,17 @@
+[Unit]
+Description=Flux Gmail triage module: one pass (new emails that probably matter -> #flux posts with buttons)
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=flux
+Group=flux
+Environment=FLUX_HOME=/var/lib/flux
+ExecStart=/usr/bin/flock -n /run/lock/flux-triage.lock /var/lib/flux/venv/bin/flux-triage
+StandardOutput=append:/var/lib/flux/logs/triage.log
+StandardError=inherit
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/flux /run/lock
+PrivateTmp=true
+NoNewPrivileges=true

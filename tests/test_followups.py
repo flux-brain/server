@@ -116,3 +116,30 @@ def test_no_module_can_send_mail():
     send = re.compile(r"""["'/](?:messages|drafts)/send\b|users/me/messages/send""")
     hits = [str(p) for p in root.rglob("*.py") if send.search(p.read_text())]
     assert hits == []
+
+
+def test_gmail_client_backs_off_on_rate_limit(monkeypatch):
+    monkeypatch.setattr(ga.time, "sleep", lambda s: None)
+
+    class R:
+        def __init__(self, code, text=""):
+            self.status_code, self.text, self.content = code, text, b"{}"
+
+        def json(self):
+            return {"ok": 1}
+
+        def raise_for_status(self):
+            if self.status_code >= 400:
+                raise RuntimeError(self.status_code)
+
+    answers = [R(403, '{"reason": "userRateLimitExceeded"}'), R(429), R(200)]
+
+    class S:
+        def request(self, *a, **kw):
+            return answers.pop(0)
+    api = ga.GmailApi(S(), "unused")
+    api.token = type("T", (), {"headers": lambda self: {}, "reset": lambda self: None})()
+    assert api.call("GET", "/x") == {"ok": 1} and answers == []
+    answers[:] = [R(403, '{"reason": "forbidden"}')]
+    with pytest.raises(RuntimeError):
+        api.call("GET", "/x")

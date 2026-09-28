@@ -1,0 +1,187 @@
+"""Offline tests for reaction buttons (lib.buttons + the relay's check) and the Gmail triage module (2026-09-28):
+only the OWNER's reaction acts, expiry, a deleted post; triage reasons, skips, first run, quiet hours, ✅ and ✍️.
+No network: Gmail, Discord and GitHub are fakes; state lives in the temporary FLUX_HOME of conftest."""
+import shutil
+import time
+
+import pytest
+
+import flux_brain.relay as m
+from flux_brain import triage as tr
+from flux_brain.config import CFG
+from flux_brain.lib import buttons
+from fakes import Resp
+
+OWNER = "100000000000000001"
+OWN = "owner@example.com"
+
+
+@pytest.fixture(autouse=True)
+def clean_state():
+    for d in ("tracked", "actions"):
+        shutil.rmtree(CFG.state_dir / d, ignore_errors=True)
+    yield
+
+
+# ---------- buttons + relay ----------
+
+def relay_with(reactors):
+    r = m.Relay.__new__(m.Relay)
+    r.state, r.calls = {}, []
+
+    def discord(method, path, **kw):
+        r.calls.append((method, path))
+        if method == "GET":
+            return reactors(path)
+        return Resp(204)
+    r.discord = discord
+    return r
+
+
+def test_owner_reaction_emits_the_action_and_untracks():
+    buttons.track("m1", "c1", "triage", {"✅": {"thread": "t1"}, "✍️": {"thread": "t1"}}, 3600)
+    r = relay_with(lambda path: Resp(200, [{"id": OWNER}] if "%E2%9C%85" in path else []))
+    assert r.check_reactions(now=time.time()) == 1
+    acts = buttons.actions("triage")
+    assert len(acts) == 1 and acts[0][1]["emoji"] == "✅" and acts[0][1]["payload"] == {"thread": "t1"}
+    assert buttons.tracked() == [] and any(c[0] == "PUT" for c in r.calls)   # 👌 acknowledgement
+
+
+def test_someone_elses_reaction_does_nothing_and_checks_are_throttled():
+    buttons.track("m2", "c1", "triage", {"✅": {"thread": "t2"}}, 3600)
+    r = relay_with(lambda path: Resp(200, [{"id": "999"}]))
+    now = time.time()
+    assert r.check_reactions(now=now) == 0 and buttons.actions("triage") == [] and len(buttons.tracked()) == 1
+    n = len(r.calls)
+    r.check_reactions(now=now + 10)
+    assert len(r.calls) == n                      # within REACTION_EVERY: no Discord call at all
+
+
+def test_expired_or_deleted_posts_are_forgotten():
+    buttons.track("m3", "c1", "triage", {"✅": {}}, -1)
+    buttons.track("m4", "c1", "triage", {"✅": {}}, 3600)
+    r = relay_with(lambda path: Resp(404))
+    r.check_reactions(now=time.time())
+    assert buttons.tracked() == [] and buttons.actions("triage") == []
+
+
+# ---------- triage ----------
+
+def msg(mid, tid, frm, subject="Hello", snippet="Can we talk", labels=(), **hdr):
+    headers = [{"name": "From", "value": frm}, {"name": "Subject", "value": subject}]
+    headers += [{"name": k.replace("_", "-"), "value": v} for k, v in hdr.items()]
+    return {"id": mid, "threadId": tid, "labelIds": list(labels), "snippet": snippet, "payload": {"headers": headers}}
+
+
+class FakeApi:
+    def __init__(self, inbox, threads=None):
+        self.inbox, self.threads, self.labelled, self.created = inbox, threads or {}, [], []
+
+    def owner_addresses(self):
+        return {OWN}
+
+    def search(self, q, limit=500):
+        if q.startswith("in:sent"):
+            return [{"id": "s1", "threadId": "st1"}]
+        return [{"id": x["id"], "threadId": x["threadId"]} for x in reversed(self.inbox)]   # newest first
+
+    def message(self, mid, headers=None):
+        if mid == "s1":
+            return {"payload": {"headers": [{"name": "To", "value": "Known <known@firm.example>"}]}}
+        return next(x for x in self.inbox if x["id"] == mid)
+
+    def thread(self, tid):
+        return {"messages": self.threads.get(tid, [])}
+
+    def labels(self):
+        return {CFG.gmail_label: "LFLUX", CFG.gmail_filed_label: "LFILED"}
+
+    def ensure_label(self, name):
+        return "LFLUX"
+
+    def label_thread(self, tid, add=(), remove=()):
+        self.labelled.append((tid, list(add)))
+
+
+class FakeBot:
+    def __init__(self):
+        self.posts, self.reacts = [], []
+
+    def channel_id(self, names, cache):
+        return "c1"
+
+    def post(self, ch, text):
+        self.posts.append(text)
+        return f"p{len(self.posts)}"
+
+    def react(self, ch, mid, e):
+        self.reacts.append((mid, e))
+
+
+class FakeGH:
+    def __init__(self):
+        self.puts = []
+
+    def put_file(self, path, data, message):
+        self.puts.append((path, data.decode()))
+
+
+@pytest.fixture
+def cfg(monkeypatch):
+    monkeypatch.setattr(tr, "DRY", False)
+    monkeypatch.setattr(CFG, "triage_keywords", ["Malta"])
+    monkeypatch.setattr(CFG, "triage_hours_utc", (0, 24))
+    monkeypatch.setattr(CFG, "triage_max_posts", 8)
+    monkeypatch.setattr(CFG, "triage_correspondents_days", 180)
+    monkeypatch.setattr(CFG, "triage_ttl_days", 3)
+
+
+def test_first_run_records_the_inbox_without_posting(cfg):
+    t = tr.Triage(FakeApi([msg("a", "ta", "Anna <anna@x.example>")]), FakeGH(), FakeBot(), {})
+    assert t.candidates() == [] and t.st["seen"] == ["a"]
+
+
+def test_reasons_and_skips(cfg):
+    inbox = [
+        msg("r", "tr", "Rita <rita@x.example>"),                              # answers the owner's thread
+        msg("k", "tk", "Known <known@firm.example>"),                         # someone the owner wrote to
+        msg("w", "tw", "Walt <walt@y.example>", subject="Malta lease"),       # keyword
+        msg("n", "tn", "Nobody <nobody@z.example>"),                          # no reason
+        msg("b", "tb", "News <news@list.example>", List_Unsubscribe="<x>", subject="Malta digest"),   # bulk
+        msg("f", "tf", "Rita <rita@x.example>", labels=("LFILED",)),          # already filed
+        msg("o", "to", f"Me <{OWN}>"),                                        # the owner's own
+    ]
+    threads = {"tr": [msg("r0", "tr", f"Me <{OWN}>"), inbox[0]]}
+    t = tr.Triage(FakeApi(inbox, threads), FakeGH(), FakeBot(), {"initialised": True})
+    got = [(x[0]["id"], x[2]) for x in t.candidates()]
+    assert got == [("r", "answers a conversation you wrote in"), ("k", "someone you have written to"), ("w", "mentions Malta")]
+    assert set(t.st["seen"]) == {"n", "b", "f", "o"}                          # decided and never looked at again
+
+
+def test_post_adds_both_buttons_and_tracks(cfg):
+    bot = FakeBot()
+    t = tr.Triage(FakeApi([]), FakeGH(), bot, {"initialised": True})
+    n = t.post([(msg("k", "tk", "Known <known@firm.example>", subject="Lease"), ("Known", "known@firm.example"),
+                 "someone you have written to")])
+    assert n == 1 and "**Known** · Lease" in bot.posts[0] and [e for _, e in bot.reacts] == ["✅", "✍️"]
+    (_, entry), = buttons.tracked()
+    assert entry["module"] == "triage" and entry["actions"]["✅"]["thread"] == "tk" and "k" in t.st["seen"]
+
+
+def test_quiet_hours_keep_items_unseen(cfg, monkeypatch):
+    monkeypatch.setattr(CFG, "triage_hours_utc", (0, 0))
+    bot = FakeBot()
+    t = tr.Triage(FakeApi([]), FakeGH(), bot, {"initialised": True})
+    assert t.post([(msg("k", "tk", "K <k@x>"), ("K", "k@x"), "why")]) == 0 and bot.posts == [] and t.st["seen"] == []
+
+
+def test_buttons_label_the_thread_and_draft_writes_a_capture(cfg):
+    buttons.emit("triage", "p1", "✅", {"thread": "t1", "from": "Anna", "subject": "Lease"})
+    buttons.emit("triage", "p2", "✍️", {"thread": "t2", "from": "Walt", "subject": "Malta lease"})
+    api, gh = FakeApi([]), FakeGH()
+    assert tr.Triage(api, gh, FakeBot(), {}).act() == 2
+    assert api.labelled == [("t1", ["LFLUX"]), ("t2", ["LFLUX"])]
+    (path, note), = gh.puts
+    assert path.startswith("inbox/") and path.endswith("-triage-t2.md")
+    assert "source: triage" in note and "want: reply-draft" in note and 'thread_id: "t2"' in note
+    assert buttons.actions("triage") == []                                    # done: never acted on twice

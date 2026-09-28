@@ -86,6 +86,13 @@ in `#flux` and watch it react within 15 seconds.
   needs the Gmail token. Set `[modules] followups = true`, enable `systemd/flux-followups.timer` (hourly). It reads
   only your own sent threads and their replies; newsletters and no-reply addresses are skipped. Label a thread with
   `[followups] dismiss_label` in Gmail to drop it. `FOLLOWUPS_DRY=1 flux-followups` prints the list instead.
+- **Gmail triage** (new emails that probably matter, posted in `#flux` with two buttons): needs the Gmail token and
+  the bot. A message is posted when a person (not a newsletter or a no-reply address) sent it and it answers a
+  conversation you wrote in, or comes from someone you wrote to (`correspondents_days`), or names a `keywords` entry.
+  Tap ✅ to file it (the Gmail module picks it up as if you had labelled it) or ✍️ to also get a reply draft in
+  `#flux` (nothing is ever sent). The relay reads the taps (once a minute, yours only: `[owner] discord_user_id`).
+  Set `[modules] triage = true`, enable `systemd/flux-triage.timer` (hourly); the first run only records the inbox.
+  `TRIAGE_DRY=1 flux-triage` prints what it would post.
 - **Memory mirror**: only meaningful if you use Claude Code with a file-based memory store; documented
   separately (v2).
 - **Google Tasks** (the checklist view of your projects): one Tasks list per active project page,

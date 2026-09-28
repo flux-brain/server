@@ -20,7 +20,8 @@ KINDS = {
     "memory-reconcile": ("memory reconcile, project {rest}", True),
     "tasks": ("Tasks checklist edit, project {rest}", True),
     "whatsapp": ("WhatsApp forward, {rest}", False),   # <account>-<last message id>, written by a private companion filer
-    "drive": ("Drive file {rest}", True),              # <file id>, written by the Drive watch module (flux_brain.drivewatch)
+    "drive": ("Drive file {rest}", True),
+    "triage": ("reply-draft request, Gmail thread {rest}", False),   # <thread id>, written by flux_brain.triage (✍️)              # <file id>, written by the Drive watch module (flux_brain.drivewatch)
 }
 _TAGS = "|".join(sorted(KINDS, key=len, reverse=True))   # longest first, so keep-note is not read as keep + "note-..."
 # Notes the relay writes itself: they already started a run through `filed`, so the watcher skips them.

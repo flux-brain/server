@@ -6,6 +6,7 @@ thread. What it cannot do, by construction: send, or write a draft. The token ma
 MCP's token reused on a host), so there is no send path here at all and a test fails if one appears.
 """
 import re
+import time
 from email.utils import getaddresses, parseaddr
 
 from .google import GoogleToken
@@ -23,10 +24,17 @@ class GmailApi:
         self._owner = None
 
     def call(self, method, path, **kw):
-        r = self.s.request(method, GMAIL + path, headers=self.token.headers(), timeout=60, **kw)
-        if r.status_code == 401:
-            self.token.reset()
+        for attempt in range(5):
             r = self.s.request(method, GMAIL + path, headers=self.token.headers(), timeout=60, **kw)
+            if r.status_code == 401 and attempt == 0:
+                self.token.reset()
+                continue
+            # Per-user rate limit (a scan of a few hundred messages hits it): Gmail answers 429, or 403 with a
+            # rateLimitExceeded reason (seen live 2026-09-28). Back off and retry; any other 403 is real.
+            if r.status_code == 429 or (r.status_code == 403 and "ateLimitExceeded" in r.text):
+                time.sleep(2 ** attempt)
+                continue
+            break
         r.raise_for_status()
         return r.json() if r.content else {}
 
@@ -48,6 +56,12 @@ class GmailApi:
                                          "Auto-Submitted")):
         """The thread with metadata (the named headers, labelIds, internalDate, snippet) of every message."""
         return self.call("GET", f"/threads/{thread_id}", params=[("format", "metadata")]
+                         + [("metadataHeaders", h) for h in headers])
+
+    def message(self, msg_id, headers=("From", "To", "Cc", "Subject", "Date", "List-Unsubscribe", "Precedence",
+                                       "Auto-Submitted")):
+        """One message with metadata (the named headers, labelIds, threadId, snippet)."""
+        return self.call("GET", f"/messages/{msg_id}", params=[("format", "metadata")]
                          + [("metadataHeaders", h) for h in headers])
 
     def labels(self):
