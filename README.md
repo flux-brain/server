@@ -8,7 +8,8 @@ What it does, every 15 seconds:
 
 - **Inbound:** new messages in your capture channel (`#flux`) become `inbox/` files in the vault, with a
   reaction to confirm; attachments (photos, PDFs, Office files, emails, voice memos) are converted to text
-  for Claude and, with the Drive module, stored in your cloud folder.
+  for Claude and, with the Drive module, stored in your cloud folder. Optionally, a Google Docs or Drive link
+  in a message is looked up (name, type, folder), and with the word `+text` its text is copied in too.
 - **Start the run:** as soon as a capture is filed, the relay starts the `vault-inbox` routine through its
   API trigger and posts the run link, so you can watch Claude work.
 - **Outbound:** answers, drafts, questions (with an @mention) and digests are posted to `#flux`; run
@@ -40,6 +41,7 @@ those two files; the code contains none.
 | Discord relay | core | a bot, two channels |
 | Attachment text extraction | core | poppler, tesseract, optional faster-whisper |
 | Drive attachments | shipped (`flux-drive-auth`) | Google Cloud OAuth client, a folder |
+| Drive link details (`[drive] links`) | shipped, off by default | a Drive token that can read the linked files (drive.readonly) |
 | Gmail feed | shipped (`flux-gmail`, `flux-gmail-auth`) | Gmail API, scope gmail.modify |
 | Google Tasks checklists | shipped (`flux-tasks`, `flux-tasks-auth`) | Tasks API, scope tasks |
 | Google Calendar day files | shipped (`flux-calendar`, `flux-calendar-auth`) | Calendar API, two read-only scopes (events, calendar list) |

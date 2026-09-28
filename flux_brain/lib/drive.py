@@ -58,6 +58,44 @@ class Drive:
         up.raise_for_status()
         return up.json()["webViewLink"]
 
+    # ---------- linked files (2026-09-28, [drive] links): read-only lookups of files the owner links in a message.
+    # They need a token that can READ those files (scope drive.readonly or drive); the drive.file consent of
+    # flux-drive-auth only sees files this app created, so with it every lookup answers 404 (INSTALL.md).
+
+    def metadata(self, file_id):
+        """The linked file's details: name, mimeType, modifiedTime, size, webViewLink, lastModifyingUser, and
+        `folder` (the first parent's name, best effort, "" when unknown). Raises on an HTTP error."""
+        h = self.headers()
+        r = self.s.get(f"https://www.googleapis.com/drive/v3/files/{file_id}", headers=h, timeout=30, params={
+            "supportsAllDrives": "true",
+            "fields": "id,name,mimeType,modifiedTime,size,parents,webViewLink,lastModifyingUser(displayName)"})
+        r.raise_for_status()
+        meta = r.json()
+        meta["folder"] = ""
+        if meta.get("parents"):
+            try:   # the folder name is what lets the routine file the link under a project; a miss is not an error
+                p = self.s.get(f"https://www.googleapis.com/drive/v3/files/{meta['parents'][0]}", headers=h, timeout=30,
+                               params={"supportsAllDrives": "true", "fields": "name"})
+                if p.ok:
+                    meta["folder"] = p.json().get("name", "")
+            except Exception:  # noqa: BLE001 - best effort
+                pass
+        return meta
+
+    def export(self, file_id, mime):
+        """Bytes of a Google-native file exported as `mime` (Drive caps an export at 10 MB). Raises on an HTTP error."""
+        r = self.s.get(f"https://www.googleapis.com/drive/v3/files/{file_id}/export", headers=self.headers(), timeout=120,
+                       params={"mimeType": mime})
+        r.raise_for_status()
+        return r.content
+
+    def download(self, file_id):
+        """Bytes of a stored (non-native) file, e.g. a PDF kept in Drive. Raises on an HTTP error."""
+        r = self.s.get(f"https://www.googleapis.com/drive/v3/files/{file_id}", headers=self.headers(), timeout=300,
+                       params={"alt": "media", "supportsAllDrives": "true"})
+        r.raise_for_status()
+        return r.content
+
 
 def auth_main(argv=None):
     """`flux-drive-auth <client_secret.json>`: one-time consent (scope drive.file only: files this app creates) that

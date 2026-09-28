@@ -73,6 +73,13 @@ class Relay(DiscordMixin, InboundMixin, WatchMixin, FireMixin, OutboundMixin):
     def drive_upload(self, name, data: bytes, mime):
         return self.drive.upload(name, data, mime)
 
+    # Linked files ([drive] links, 2026-09-28): wrappers like drive_upload, so the inbound tests can stub them.
+    def drive_metadata(self, file_id):
+        return self.drive.metadata(file_id)
+
+    def drive_file_bytes(self, file_id, export_mime=None):
+        return self.drive.export(file_id, export_mime) if export_mime else self.drive.download(file_id)
+
 
 def main():
     st = load_state()

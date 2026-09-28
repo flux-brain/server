@@ -86,6 +86,10 @@ class Config:
         self.drive_id = g("drive", "drive_id", "")
         self.drive_folder_id = g("drive", "folder_id", "")
         self.drive_token_file = str(self.home / g("drive", "token_file", "drive-token.json"))
+        # Drive links in a message (2026-09-28): "off" (default) leaves them as plain URLs; "details" looks each one up
+        # and adds name, type, folder and last edit to the capture, and its text when the message says `+text`.
+        # Needs a token that can read the linked files (drive.readonly or drive), not the drive.file of flux-drive-auth.
+        self.drive_links = str(g("drive", "links", "off")).lower()
         self.gmail_label = g("gmail", "label", "📁 Flux")
         self.gmail_filed_label = g("gmail", "filed_label", "📁 Flux/Filed")
         self.gmail_token_file = str(self.home / g("gmail", "token_file", "gmail-token.json"))

@@ -7,6 +7,7 @@ from ..config import CFG
 from ..lib.common import log
 from ..lib.secrets import SECRET_PATTERNS
 from ..lib.extract import extract_text, attachment_text_file   # (tests stub extract_text on this module)
+from ..lib.links import drive_links, wants_text, kind_label, EXPORTS
 from . import state
 
 MESSAGE_GIVE_UP = 3                # (2026-09-17 code review fix 2) strict filing attempts for ONE message before its
@@ -99,6 +100,57 @@ class InboundMixin:
             entry += ", no text (type not converted)"
         return entry
 
+    def link_entry(self, m, url, fid, folder, want_text, stamp, ts, lenient):
+        """One `## Links` line for a Google Drive / Docs link ([drive] links = "details", 2026-09-28): the file's name,
+        type, folder and last edit, looked up with the Drive token; its text too when the message says `+text`.
+        A failed LOOKUP never blocks the note (the link is in the message anyway): the line says why. A failed TEXT
+        export, which the owner asked for, follows the attachment rule: strict (raise) until the last attempt."""
+        try:
+            meta = self.drive_metadata(fid)
+        except Exception as exc:  # noqa: BLE001 - 404/403 = the token cannot read it; anything else = transient
+            code = getattr(getattr(exc, "response", None), "status_code", None)
+            why = f"HTTP {code}" if code else exc.__class__.__name__
+            return (f"- {url}: not accessible with the Drive token ({why}); only the link is kept"
+                    + (", no text" if want_text else ""))
+        name = (meta.get("name") or fid).replace("[", "(").replace("]", ")")   # brackets would break the Markdown link
+        mime = meta.get("mimeType", "")
+        details = [kind_label(mime)]
+        if meta.get("folder"):
+            details.append(f"folder \"{meta['folder']}\"")
+        if meta.get("modifiedTime"):
+            who = (meta.get("lastModifyingUser") or {}).get("displayName")
+            details.append(f"last edited {meta['modifiedTime'][:16].replace('T', ' ')} UTC" + (f" by {who}" if who else ""))
+        link = meta.get("webViewLink") or url
+        entry = f"- [{name}]({link}) ({', '.join(details)}, stays in Google Drive)"
+        if not want_text or folder or mime == "application/vnd.google-apps.folder":
+            return entry
+        export_mime, method = EXPORTS.get(mime, (None, None))
+        if mime.startswith("application/vnd.google-apps.") and not export_mime:
+            return entry + ", no text (type not converted)"
+        size = int(meta.get("size") or 0)
+        if size > CFG.max_attachment_bytes:
+            return entry + f", no text (over {CFG.max_attachment_mb} MB)"
+        try:
+            data = self.drive_file_bytes(fid, export_mime)
+            if export_mime == "text/plain":
+                text = data.decode("utf-8-sig", "replace")
+            else:   # xlsx of a Sheet, or a stored file (PDF, Word...): the attachment converters
+                text, method = extract_text(data, export_mime or mime, name)
+        except Exception as exc:  # noqa: BLE001
+            if not lenient:
+                raise
+            return entry + f", text NOT fetched after {MESSAGE_GIVE_UP} attempts ({exc.__class__.__name__})"
+        if not method:
+            return entry + ", no text (type not converted)"
+        safe = re.sub(r"[^A-Za-z0-9._-]", "_", name)[:80]
+        text_path = f"raw/attachments/{stamp}-{m['id']}-link-{safe}.md"
+        kb = max(1, (size or len(data)) // 1024)
+        self.put_file(text_path, attachment_text_file(
+            name, link, mime, kb, method, text, m["id"], f"{ts:%Y-%m-%dT%H:%MZ}",
+            origin="Text of a file linked in the message; the original stays in Google Drive and may have changed since."
+        ).encode(), f"inbox: text of linked file {name}")
+        return entry + f", text: [[{text_path}|{name} (text)]]"
+
     def file_message(self, channel, m, lenient=False):
         """File one Discord message as an inbox capture. `lenient` (fix 2, set by file_guarded on the last attempt):
         an attachment that fails is listed as not fetched instead of failing the message."""
@@ -127,14 +179,22 @@ class InboundMixin:
                 not_fetched.append(f"{name} ({exc.__class__.__name__})")
                 lines.append(f"- attachment `{name}` NOT fetched or stored after {MESSAGE_GIVE_UP} attempts "
                              f"({exc.__class__.__name__}); it is still on the Discord message, ask the owner to re-post it if it matters")
+        link_lines = []
+        if CFG.drive_links == "details" and getattr(self, "drive", None) is not None:
+            links = drive_links(text)
+            if links:
+                self.seen(channel, m["id"])   # lookups (and a +text export) take a moment
+                want = wants_text(text)
+                link_lines = [self.link_entry(m, url, fid, folder, want, stamp, ts, lenient) for url, fid, folder in links]
         refs = ""
         if m.get("referenced_message"):  # a reply, e.g. answering a question Claude posted
             refs = "\nin_reply_to: |\n  " + m["referenced_message"].get("content", "")[:300].replace("\n", "\n  ")
         note = (f"---\nsource: discord\nmessage_id: \"{m['id']}\"\ncaptured: {ts:%Y-%m-%dT%H:%MZ}{refs}\n---\n\n"
-                f"{text}\n" + ("\n## Attachments\n" + "\n".join(lines) + "\n" if lines else ""))
+                f"{text}\n" + ("\n## Attachments\n" + "\n".join(lines) + "\n" if lines else "")
+                + ("\n## Links\n" + "\n".join(link_lines) + "\n" if link_lines else ""))
         self.put_file(f"inbox/{stamp}-{m['id']}.md", note.encode(), "inbox: 1 capture from Discord")
         self.ack(channel, m["id"], "📥 Filed to inbox.")
-        if m.get("attachments"):
+        if m.get("attachments") or link_lines:
             self.unseen(channel, m["id"])
         if not_fetched:
             # Best effort, like the 👀 reaction: the capture is filed either way, and this reply is the only place
@@ -145,6 +205,6 @@ class InboundMixin:
                           reply_to=m["id"], key=f"degraded-{m['id']}")
             except Exception as exc:  # noqa: BLE001
                 log(f"degraded-filing reply not posted ({exc.__class__.__name__})")
-        log(f"filed message {m['id']} ({len(lines)} attachment(s)"
+        log(f"filed message {m['id']} ({len(lines)} attachment(s)" + (f", {len(link_lines)} link(s)" if link_lines else "")
             + (f", {len(not_fetched)} not fetched" if not_fetched else "") + ")")
         return 1
