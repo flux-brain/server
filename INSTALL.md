@@ -94,7 +94,10 @@ in `#flux` and watch it react within 15 seconds.
   the bot. A message is posted when a person (not a newsletter or a no-reply address) sent it and it answers a
   conversation you wrote in, or comes from someone you wrote to (`correspondents_days`), or names a `keywords` entry.
   Tap ✅ to file it (the Gmail module picks it up as if you had labelled it) or ✍️ to also get a reply draft in
-  `#flux` (nothing is ever sent). The relay reads the taps (once a minute, yours only: `[owner] discord_user_id`).
+  `#flux` (nothing is ever sent). The relay reads the taps (once a minute, yours only: `[owner] discord_user_id`),
+  marks a tap ⏳ and acts after `[discord] button_grace_s` (10 minutes): remove the reaction before then to cancel.
+  Add a second timer or cron line running `flux-triage --act-only` every minute so a tap acts right after its
+  grace period instead of at the next hourly run.
   Set `[modules] triage = true`, enable `systemd/flux-triage.timer` (hourly); the first run only records the inbox.
   `TRIAGE_DRY=1 flux-triage` prints what it would post.
 - **Memory mirror**: only meaningful if you use Claude Code with a file-based memory store; documented

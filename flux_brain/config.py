@@ -58,6 +58,7 @@ class Config:
         # discord
         self.channel_names = tuple(g("discord", "channel_names", None) or [g("discord", "channel", "flux")])
         self.log_channel_name = g("discord", "log_channel", "flux-log")
+        self.button_grace = int(g("discord", "button_grace_s", 600))   # a tap acts after this long unless taken back
         self.discord_token = env.get("DISCORD_BOT_TOKEN", "")
         self.discord_guild = env.get("DISCORD_GUILD_ID", "")
         # routine

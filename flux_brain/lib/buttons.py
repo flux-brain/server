@@ -5,7 +5,8 @@ Why files and not a queue: every Flux program is a short cron or loop process un
 share one place, `$FLUX_HOME/state`. A program that posts a message with buttons registers it with `track()`:
 `state/tracked/<message id>.json` = which module, which channel, which reaction means what, and until when. The relay
 (flux_brain.relay.reactions) checks the tracked posts about once a minute; when the OWNER (flux.toml
-`[owner] discord_user_id`, never a reaction count) has added one of the reactions, it writes
+`[owner] discord_user_id`, never a reaction count) has added one of the reactions and kept it for the grace period
+(`[discord] button_grace_s`, ⏳ on the post meanwhile; removing the reaction cancels), it writes
 `state/actions/<module>/<message id>.json` with the payload and forgets the post. The module reads its actions on its
 next run and deletes each file after acting, so a crash never acts twice.
 
@@ -22,7 +23,7 @@ import requests
 from ..config import CFG
 from .state import load_json, save_json
 
-__all__ = ["track", "tracked", "untrack", "emit", "actions", "done", "Bot", "DISCORD"]
+__all__ = ["track", "tracked", "save", "untrack", "emit", "actions", "done", "Bot", "DISCORD"]
 
 DISCORD = "https://discord.com/api/v10"
 
@@ -51,6 +52,11 @@ def tracked():
             if e:
                 out.append((p, e))
     return out
+
+
+def save(path, entry):
+    """Rewrite a tracked entry (the relay records a tap waiting out its grace period in it)."""
+    save_json(path, entry)
 
 
 def untrack(path):

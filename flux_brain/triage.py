@@ -149,6 +149,8 @@ class Triage:
 
 
 def main():
+    """`flux-triage`: act on taps, then look for new mail (hourly). `flux-triage --act-only`: act on taps and stop
+    (every minute; no Gmail call at all when no tap is waiting, so a tap acts within a minute of its grace period)."""
     if not CFG.mod_triage:
         raise SystemExit("flux: the triage module is off ([modules] triage = false in flux.toml); nothing to do")
     st = load_json(state_file(), {"failures": 0})
@@ -156,7 +158,7 @@ def main():
         s = session()
         t = Triage(GmailApi(s, CFG.gmail_token_file), None if DRY else GitHub(), None if DRY else buttons.Bot(), st)
         acted = t.act()
-        posted = t.post(t.candidates())
+        posted = 0 if "--act-only" in sys.argv[1:] else t.post(t.candidates())
         if acted or posted:
             log(f"triage: {acted} button(s) acted on, {posted} post(s)")
         st["failures"] = 0
