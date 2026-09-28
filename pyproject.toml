@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "flux-brain"
-version = "0.4.0"
+version = "0.5.0"
 description = "Flux server side: the Discord relay that connects a capture channel to a vault repository maintained by Claude Code routines"
 readme = "README.md"
 license = "Apache-2.0"
@@ -35,6 +35,7 @@ flux-tasks = "flux_brain.tasks:main"                 # the Tasks module (long-ru
 flux-tasks-auth = "flux_brain.tasks:auth_main"       # one-time Tasks consent (needs the `google` extra)
 flux-calendar = "flux_brain.calendar:main"           # the Calendar module, one pass (run by flux-calendar.timer)
 flux-calendar-auth = "flux_brain.calendar:auth_main" # one-time Calendar consent, two read-only scopes (needs the `google` extra)
+flux-drive-watch = "flux_brain.drivewatch:main"      # the Drive watch module, one pass (run by flux-drive-watch.timer)
 
 [tool.setuptools]
 script-files = ["bin/flux-relay-loop", "bin/flux-ask"]   # shell helpers installed next to flux-relay

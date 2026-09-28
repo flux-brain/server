@@ -73,6 +73,15 @@ in `#flux` and watch it react within 15 seconds.
      Drive. This needs a token that can READ the linked files (scope `drive.readonly` or `drive`): the
      `drive.file` token of step 2 sees only files this app created, so every lookup would answer 404 and
      the line would say "not accessible". Point `[drive] token_file` at such a token, or leave `links` off.
+- **Drive watch** (new files in a few chosen Drive folders become captures, e.g. the folder where Google Meet saves
+  Gemini's meeting notes): needs the Drive token of step 5 above, one that can READ those folders.
+  1. List the folders in `flux.toml` `[drive_watch] folders` (sub-folders are included; add `project = "<page slug>"`
+     to route a folder to a project page), set `[modules] drive_watch = true`.
+  2. Optional dry pass: copy `flux.toml` into a scratch directory, link `flux.env` next to it, and run
+     `FLUX_HOME=<scratch> DRIVE_WATCH_DRY=1 flux-drive-watch` twice (the first run only records where the change
+     feed starts); the captures print instead of being written.
+  3. Enable `systemd/flux-drive-watch.timer` (every 5 minutes). New files are filed once they have gone
+     `settle_s` without an edit; edits to a file that was filed already are not filed again.
 - **Memory mirror**: only meaningful if you use Claude Code with a file-based memory store; documented
   separately (v2).
 - **Google Tasks** (the checklist view of your projects): one Tasks list per active project page,

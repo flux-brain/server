@@ -35,6 +35,7 @@ memory = false                     # memory mirror + page/memory reconcile
 gmail = false                      # Gmail label feed
 tasks = false                      # Google Tasks list per active project (official API)
 calendar = false                   # Google Calendar -> one dated file per day in the vault (read-only)
+drive_watch = false                # new files in chosen Google Drive folders -> inbox captures
 
 [drive]                            # when modules.drive = true
 drive_id = ""
@@ -69,3 +70,10 @@ dir = "calendar"                   # vault folder
 
 [monitoring]                       # optional; empty = no pings, no alerts
 ops_webhook_env = "OPS_WEBHOOK_URL"   # name of the env var holding a Discord webhook for failure alerts
+
+[drive_watch]                      # when modules.drive_watch = true; uses [drive] token_file, which must READ these folders
+folders = []                       # e.g. [{ id = "<folder id>", project = "<page slug>" }, { id = "<folder id>" }]; sub-folders included
+settle_s = 600                     # file a new file once it has gone this long without an edit
+owned_only = true                  # My Drive files must be yours; on a shared drive the folder list is the filter
+text = true                        # copy the text into raw/attachments/ (false = details only)
+max_per_run = 10
