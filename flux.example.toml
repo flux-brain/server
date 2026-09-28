@@ -36,6 +36,7 @@ gmail = false                      # Gmail label feed
 tasks = false                      # Google Tasks list per active project (official API)
 calendar = false                   # Google Calendar -> one dated file per day in the vault (read-only)
 drive_watch = false                # new files in chosen Google Drive folders -> inbox captures
+followups = false                  # sent emails still waiting for an answer -> followups/waiting.md (needs the gmail token)
 
 [drive]                            # when modules.drive = true
 drive_id = ""
@@ -77,3 +78,11 @@ settle_s = 600                     # file a new file once it has gone this long 
 owned_only = true                  # My Drive files must be yours; on a shared drive the folder list is the filter
 text = true                        # copy the text into raw/attachments/ (false = details only)
 max_per_run = 10
+
+[followups]                        # when modules.followups = true; uses [gmail] token_file
+days = 4                           # list a sent email once it has waited this many days
+lookback_days = 30                 # older than this: dropped
+dismiss_label = "!🌀 Flux/No reply needed"   # label a thread with it to drop it from the list (created on first run)
+ignore = []                        # recipients never tracked: "someone@example.org" or "@example.org"
+max_items = 30
+skip_forwards = true               # "Fwd:" / "TR:" emails are FYI: not tracked
