@@ -1,0 +1,10 @@
+[Unit]
+Description=Run the Flux Gmail triage module every hour
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=1h
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

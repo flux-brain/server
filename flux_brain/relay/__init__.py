@@ -30,25 +30,27 @@ from ..lib.common import log, ops_alert
 from ..lib.captures import RELAY_NOTE, HOST_NOTE  # noqa: F401  re-exported: the tests and the docs refer to them here
 from ..lib.github import GitHub, session
 from ..lib.drive import Drive
-from . import state, discord, inbound, watch, fire, outbound  # noqa: F401  submodules, reachable as relay.<name>
+from . import state, discord, inbound, watch, fire, outbound, reactions  # noqa: F401  submodules, reachable as relay.<name>
 from .state import state_file, load_state, save_state, prune_posted  # noqa: F401
 from .discord import DiscordMixin, DISCORD  # noqa: F401
 from .inbound import InboundMixin, MESSAGE_GIVE_UP  # noqa: F401
 from .watch import WatchMixin, RECONCILE_NOTE, RECONCILE_COALESCE, RECONCILE_MAX, reconcile_cmd, reconcile_log  # noqa: F401
 from .fire import FireMixin, RUN_MARKER, MANIFEST_MAX, describe_inbox  # noqa: F401
+from .reactions import ReactionsMixin, REACTION_EVERY  # noqa: F401
 from .outbound import OutboundMixin, OUTBOUND_DIRS, MAX_POST_CHUNKS, is_question, question_text, is_run_summary, chunk_lines  # noqa: F401
 
 __all__ = ["Relay", "main", "CFG", "FAIL_ALERT_AFTER", "RELAY_NOTE", "HOST_NOTE", "state", "discord", "inbound", "watch", "fire",
            "outbound", "state_file", "load_state", "save_state", "prune_posted", "DISCORD", "MESSAGE_GIVE_UP", "RECONCILE_NOTE",
            "RECONCILE_COALESCE", "RECONCILE_MAX", "reconcile_cmd", "reconcile_log", "RUN_MARKER", "MANIFEST_MAX", "describe_inbox",
-           "OUTBOUND_DIRS", "MAX_POST_CHUNKS", "is_question", "question_text", "is_run_summary", "chunk_lines"]
+           "OUTBOUND_DIRS", "MAX_POST_CHUNKS", "is_question", "question_text", "is_run_summary", "chunk_lines",
+           "reactions", "REACTION_EVERY"]
 
 FAIL_ALERT_AFTER = 20              # consecutive failed runs before alerting: since 2026-09-15 the relay runs
                                    # every 15 s (flux-relay-loop), so 20 runs ~ 5 minutes
                                    # (was 3 at the old 5-minute cadence; 3 x 15 s would page on a GitHub blip)
 
 
-class Relay(DiscordMixin, InboundMixin, WatchMixin, FireMixin, OutboundMixin):
+class Relay(DiscordMixin, InboundMixin, WatchMixin, FireMixin, OutboundMixin, ReactionsMixin):
     def __init__(self, state):
         self.state = state
         self.s = session(retry_writes=True)
@@ -97,6 +99,7 @@ def main():
         relay.trigger_apply(tree)  # new memory proposals start the applier now instead of at its next cron tick
         relay.maybe_fire(filed, channel, tree)  # never raises: a failed start leaves captures for the hourly run
         relay.outbound(channel, tree)
+        relay.check_reactions()  # reaction buttons on host modules' posts (lib.buttons); never raises
         st["failures"] = 0
         save_state(st)
         return 0
