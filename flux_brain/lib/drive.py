@@ -68,7 +68,7 @@ class Drive:
         h = self.headers()
         r = self.s.get(f"https://www.googleapis.com/drive/v3/files/{file_id}", headers=h, timeout=30, params={
             "supportsAllDrives": "true",
-            "fields": "id,name,mimeType,modifiedTime,size,parents,webViewLink,lastModifyingUser(displayName)"})
+            "fields": "id,name,mimeType,modifiedTime,size,parents,webViewLink,trashed,lastModifyingUser(displayName)"})
         r.raise_for_status()
         meta = r.json()
         meta["folder"] = ""

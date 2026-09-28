@@ -83,6 +83,7 @@ class Config:
         self.mod_gmail = bool(g("modules", "gmail", False))
         self.mod_tasks = bool(g("modules", "tasks", False))
         self.mod_calendar = bool(g("modules", "calendar", False))
+        self.mod_drive_watch = bool(g("modules", "drive_watch", False))
         self.drive_id = g("drive", "drive_id", "")
         self.drive_folder_id = g("drive", "folder_id", "")
         self.drive_token_file = str(self.home / g("drive", "token_file", "drive-token.json"))
@@ -91,6 +92,13 @@ class Config:
         # "text" (2026-09-28) copies the text by default and `-text` in a message asks for the details only.
         # Needs a token that can read the linked files (drive.readonly or drive), not the drive.file of flux-drive-auth.
         self.drive_links = str(g("drive", "links", "off")).lower()
+        # Drive watch module (2026-09-28): new files in these folders (sub-folders included) become captures. Each entry
+        # is a folder id or {id, project}; the project slug goes into the capture so the run opens that page first.
+        self.drive_watch_folders = [f if isinstance(f, dict) else {"id": str(f)} for f in g("drive_watch", "folders", [])]
+        self.drive_watch_settle = int(g("drive_watch", "settle_s", 600))
+        self.drive_watch_owned_only = bool(g("drive_watch", "owned_only", True))
+        self.drive_watch_text = bool(g("drive_watch", "text", True))
+        self.drive_watch_max_per_run = int(g("drive_watch", "max_per_run", 10))
         self.gmail_label = g("gmail", "label", "📁 Flux")
         self.gmail_filed_label = g("gmail", "filed_label", "📁 Flux/Filed")
         self.gmail_token_file = str(self.home / g("gmail", "token_file", "gmail-token.json"))

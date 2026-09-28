@@ -7,7 +7,8 @@ from ..config import CFG
 from ..lib.common import log
 from ..lib.secrets import SECRET_PATTERNS
 from ..lib.extract import extract_text, attachment_text_file   # (tests stub extract_text on this module)
-from ..lib.links import drive_links, text_wanted, kind_label, EXPORTS
+from ..lib.links import drive_links, text_wanted
+from ..lib.linked import details_line, text_file
 from . import state
 
 MESSAGE_GIVE_UP = 3                # (2026-09-17 code review fix 2) strict filing attempts for ONE message before its
@@ -101,11 +102,12 @@ class InboundMixin:
         return entry
 
     def link_entry(self, m, url, fid, folder, want_text, stamp, ts, lenient):
-        """One `## Links` line for a Google Drive / Docs link ([drive] links = "details", 2026-09-28): the file's name,
-        type, folder and last edit, looked up with the Drive token; its text too when text_wanted() says so (`+text`,
-        or `links = "text"` unless the message says `-text`).
-        A failed LOOKUP never blocks the note (the link is in the message anyway): the line says why. A failed TEXT
-        export, which the owner asked for, follows the attachment rule: strict (raise) until the last attempt."""
+        """One `## Links` line for a Google Drive / Docs link ([drive] links, 2026-09-28): the file's name, type,
+        folder and last edit, looked up with the Drive token; its text too when text_wanted() says so (`+text`, or
+        `links = "text"` unless the message says `-text`). The line and the text file are lib.linked's, shared with
+        the Drive watch module. A failed LOOKUP never blocks the note (the link is in the message anyway): the line
+        says why. A failed TEXT export, which the owner asked for, follows the attachment rule: strict (raise) until
+        the last attempt."""
         try:
             meta = self.drive_metadata(fid)
         except Exception as exc:  # noqa: BLE001 - 404/403 = the token cannot read it; anything else = transient
@@ -113,44 +115,22 @@ class InboundMixin:
             why = f"HTTP {code}" if code else exc.__class__.__name__
             return (f"- {url}: not accessible with the Drive token ({why}); only the link is kept"
                     + (", no text" if want_text else ""))
-        name = (meta.get("name") or fid).replace("[", "(").replace("]", ")")   # brackets would break the Markdown link
-        mime = meta.get("mimeType", "")
-        details = [kind_label(mime)]
-        if meta.get("folder"):
-            details.append(f"folder \"{meta['folder']}\"")
-        if meta.get("modifiedTime"):
-            who = (meta.get("lastModifyingUser") or {}).get("displayName")
-            details.append(f"last edited {meta['modifiedTime'][:16].replace('T', ' ')} UTC" + (f" by {who}" if who else ""))
-        link = meta.get("webViewLink") or url
-        entry = f"- [{name}]({link}) ({', '.join(details)}, stays in Google Drive)"
-        if not want_text or folder or mime == "application/vnd.google-apps.folder":
+        meta.setdefault("id", fid)
+        entry = details_line(meta, url)
+        if not want_text or folder:
             return entry
-        export_mime, method = EXPORTS.get(mime, (None, None))
-        if mime.startswith("application/vnd.google-apps.") and not export_mime:
-            return entry + ", no text (type not converted)"
-        size = int(meta.get("size") or 0)
-        if size > CFG.max_attachment_bytes:
-            return entry + f", no text (over {CFG.max_attachment_mb} MB)"
         try:
-            data = self.drive_file_bytes(fid, export_mime)
-            if export_mime == "text/plain":
-                text = data.decode("utf-8-sig", "replace")
-            else:   # xlsx of a Sheet, or a stored file (PDF, Word...): the attachment converters
-                text, method = extract_text(data, export_mime or mime, name)
+            path, body, _kb, suffix = text_file(
+                meta, self.drive_file_bytes, extract_text, CFG.max_attachment_bytes,
+                f"raw/attachments/{stamp}-{m['id']}-link", m["id"], f"{ts:%Y-%m-%dT%H:%MZ}",
+                "Text of a file linked in the message; the original stays in Google Drive and may have changed since.")
         except Exception as exc:  # noqa: BLE001
             if not lenient:
                 raise
             return entry + f", text NOT fetched after {MESSAGE_GIVE_UP} attempts ({exc.__class__.__name__})"
-        if not method:
-            return entry + ", no text (type not converted)"
-        safe = re.sub(r"[^A-Za-z0-9._-]", "_", name)[:80]
-        text_path = f"raw/attachments/{stamp}-{m['id']}-link-{safe}.md"
-        kb = max(1, (size or len(data)) // 1024)
-        self.put_file(text_path, attachment_text_file(
-            name, link, mime, kb, method, text, m["id"], f"{ts:%Y-%m-%dT%H:%MZ}",
-            origin="Text of a file linked in the message; the original stays in Google Drive and may have changed since."
-        ).encode(), f"inbox: text of linked file {name}")
-        return entry + f", text: [[{text_path}|{name} (text)]]"
+        if path:
+            self.put_file(path, body.encode(), f"inbox: text of linked file {meta.get('name') or fid}")
+        return entry + suffix
 
     def file_message(self, channel, m, lenient=False):
         """File one Discord message as an inbox capture. `lenient` (fix 2, set by file_guarded on the last attempt):
