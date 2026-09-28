@@ -82,6 +82,10 @@ in `#flux` and watch it react within 15 seconds.
      feed starts); the captures print instead of being written.
   3. Enable `systemd/flux-drive-watch.timer` (every 5 minutes). New files are filed once they have gone
      `settle_s` without an edit; edits to a file that was filed already are not filed again.
+  4. Optional, `suggest = true`: once a week the module posts the folders you changed most outside the watched ones
+     (at least `suggest_min_files` files), each with a ✅ button; a tap adds it to the watched list (kept in the
+     state file). Put in `never` the folders that change on their own under your account (sync mirrors, backups,
+     the Drive module's attachment folder) and any folder you never want filed.
 - **Follow-ups** (sent emails still waiting for an answer, listed in `followups/waiting.md` for the daily digest):
   needs the Gmail token. Set `[modules] followups = true`, enable `systemd/flux-followups.timer` (hourly). It reads
   only your own sent threads and their replies; newsletters and no-reply addresses are skipped. Label a thread with
