@@ -38,13 +38,34 @@ def relay_with(reactors):
     return r
 
 
-def test_owner_reaction_emits_the_action_and_untracks():
+def test_owner_tap_waits_the_grace_period_then_emits(monkeypatch):
+    monkeypatch.setattr(CFG, "button_grace", 600)
     buttons.track("m1", "c1", "triage", {"✅": {"thread": "t1"}, "✍️": {"thread": "t1"}}, 3600)
     r = relay_with(lambda path: Resp(200, [{"id": OWNER}] if "%E2%9C%85" in path else []))
-    assert r.check_reactions(now=time.time()) == 1
+    t0 = time.time()
+    assert r.check_reactions(now=t0) == 0 and buttons.actions("triage") == []
+    (_, entry), = buttons.tracked()
+    assert entry["pending"]["emoji"] == "✅" and ("PUT", "/channels/c1/messages/m1/reactions/%E2%8F%B3/@me") in r.calls
+    assert r.check_reactions(now=t0 + 300) == 0                       # still inside the grace period
+    assert r.check_reactions(now=t0 + 660) == 1
     acts = buttons.actions("triage")
     assert len(acts) == 1 and acts[0][1]["emoji"] == "✅" and acts[0][1]["payload"] == {"thread": "t1"}
-    assert buttons.tracked() == [] and any(c[0] == "PUT" for c in r.calls)   # 👌 acknowledgement
+    assert buttons.tracked() == [] and ("PUT", "/channels/c1/messages/m1/reactions/%F0%9F%91%8C/@me") in r.calls
+
+
+def test_removing_the_reaction_in_time_cancels(monkeypatch):
+    monkeypatch.setattr(CFG, "button_grace", 600)
+    buttons.track("m5", "c1", "triage", {"✍️": {"thread": "t5"}}, 3600)
+    reactors = [[{"id": OWNER}]]
+    r = relay_with(lambda path: Resp(200, reactors[0]))
+    t0 = time.time()
+    r.check_reactions(now=t0)
+    reactors[0] = []                                                  # the owner takes the tap back
+    r.check_reactions(now=t0 + 120)
+    (_, entry), = buttons.tracked()
+    assert "pending" not in entry and buttons.actions("triage") == []
+    assert ("DELETE", "/channels/c1/messages/m5/reactions/%E2%8F%B3/@me") in r.calls
+    assert r.check_reactions(now=t0 + 900) == 0 and buttons.actions("triage") == []
 
 
 def test_someone_elses_reaction_does_nothing_and_checks_are_throttled():
