@@ -129,7 +129,7 @@ class FakeGH:
 @pytest.fixture
 def cfg(monkeypatch):
     monkeypatch.setattr(tr, "DRY", False)
-    monkeypatch.setattr(CFG, "triage_keywords", ["Malta"])
+    monkeypatch.setattr(CFG, "triage_keywords", ["Harbour"])
     monkeypatch.setattr(CFG, "triage_hours_utc", (0, 24))
     monkeypatch.setattr(CFG, "triage_max_posts", 8)
     monkeypatch.setattr(CFG, "triage_correspondents_days", 180)
@@ -145,16 +145,16 @@ def test_reasons_and_skips(cfg):
     inbox = [
         msg("r", "tr", "Rita <rita@x.example>"),                              # answers the owner's thread
         msg("k", "tk", "Known <known@firm.example>"),                         # someone the owner wrote to
-        msg("w", "tw", "Walt <walt@y.example>", subject="Malta lease"),       # keyword
+        msg("w", "tw", "Walt <walt@y.example>", subject="Harbour lease"),       # keyword
         msg("n", "tn", "Nobody <nobody@z.example>"),                          # no reason
-        msg("b", "tb", "News <news@list.example>", List_Unsubscribe="<x>", subject="Malta digest"),   # bulk
+        msg("b", "tb", "News <news@list.example>", List_Unsubscribe="<x>", subject="Harbour digest"),   # bulk
         msg("f", "tf", "Rita <rita@x.example>", labels=("LFILED",)),          # already filed
         msg("o", "to", f"Me <{OWN}>"),                                        # the owner's own
     ]
     threads = {"tr": [msg("r0", "tr", f"Me <{OWN}>"), inbox[0]]}
     t = tr.Triage(FakeApi(inbox, threads), FakeGH(), FakeBot(), {"initialised": True})
     got = [(x[0]["id"], x[2]) for x in t.candidates()]
-    assert got == [("r", "answers a conversation you wrote in"), ("k", "someone you have written to"), ("w", "mentions Malta")]
+    assert got == [("r", "answers a conversation you wrote in"), ("k", "someone you have written to"), ("w", "mentions Harbour")]
     assert set(t.st["seen"]) == {"n", "b", "f", "o"}                          # decided and never looked at again
 
 
@@ -177,7 +177,7 @@ def test_quiet_hours_keep_items_unseen(cfg, monkeypatch):
 
 def test_buttons_label_the_thread_and_draft_writes_a_capture(cfg):
     buttons.emit("triage", "p1", "✅", {"thread": "t1", "from": "Anna", "subject": "Lease"})
-    buttons.emit("triage", "p2", "✍️", {"thread": "t2", "from": "Walt", "subject": "Malta lease"})
+    buttons.emit("triage", "p2", "✍️", {"thread": "t2", "from": "Walt", "subject": "Harbour lease"})
     api, gh = FakeApi([]), FakeGH()
     assert tr.Triage(api, gh, FakeBot(), {}).act() == 2
     assert api.labelled == [("t1", ["LFLUX"]), ("t2", ["LFLUX"])]
