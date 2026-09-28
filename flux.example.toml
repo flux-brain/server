@@ -41,7 +41,8 @@ drive_id = ""
 folder_id = ""
 token_file = "drive-token.json"    # relative to paths.home
 links = "off"                      # "details": Docs/Drive links in a message get name, type, folder, last edit in
-                                   # the capture, and their text with the word +text. Needs a token that can READ
+                                   # the capture, and their text with the word +text; "text": their text by default,
+                                   # the word -text for details only. Both need a token that can READ
                                    # those files (drive.readonly), not the drive.file one of flux-drive-auth (INSTALL.md)
 
 [gmail]                            # when modules.gmail = true
