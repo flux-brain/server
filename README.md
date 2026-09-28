@@ -48,6 +48,7 @@ those two files; the code contains none.
 | Google Calendar day files | shipped (`flux-calendar`, `flux-calendar-auth`) | Calendar API, two read-only scopes (events, calendar list) |
 | Drive watch | shipped (`flux-drive-watch`), off by default | a Drive token that can read the watched folders (drive.readonly) |
 | Follow-ups (waiting on) | shipped (`flux-followups`), off by default | the Gmail token |
+| Gmail triage (✅ / ✍️ buttons) | shipped (`flux-triage`), off by default | the Gmail token, the bot |
 | Google Keep checklists | not shipped | no public API; replaced by Tasks |
 | Memory mirror + reconcile | not shipped | Claude Code file-based memory store |
 
