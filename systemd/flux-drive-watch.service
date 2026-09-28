@@ -1,0 +1,17 @@
+[Unit]
+Description=Flux Drive watch module: one pass (new files in watched Google Drive folders -> vault inbox captures)
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=flux
+Group=flux
+Environment=FLUX_HOME=/var/lib/flux
+ExecStart=/usr/bin/flock -n /run/lock/flux-drive-watch.lock /var/lib/flux/venv/bin/flux-drive-watch
+StandardOutput=append:/var/lib/flux/logs/drive-watch.log
+StandardError=inherit
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/flux /run/lock
+PrivateTmp=true
+NoNewPrivileges=true
