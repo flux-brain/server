@@ -140,6 +140,10 @@ class Config:
         self.calendar_details = bool(g("calendar", "details", False))
         self.calendar_max_desc = int(g("calendar", "max_description", 1000))
         self.calendar_dir = g("calendar", "dir", "calendar").strip("/")
+        # Meeting prep (2026-09-28): with details on, the last email exchanged with each attendee of the events of the
+        # first `mail_context_days` days (today + tomorrow by default); needs the Gmail token ([gmail] token_file).
+        self.calendar_mail_context = bool(g("calendar", "mail_context", False))
+        self.calendar_mail_context_days = int(g("calendar", "mail_context_days", 2))
         # secrets
         self.github_token = env.get("GITHUB_TOKEN", "")
         self.ops_webhook = env.get("OPS_WEBHOOK_URL", "")

@@ -62,6 +62,9 @@ settle_s = 45                      # a list must be unchanged this long before i
 
 [calendar]                         # when modules.calendar = true
 token_file = "calendar-token.json"
+mail_context = false               # with details = true: under today's and tomorrow's events, the last email with each
+                                   # attendee (date, subject, Gmail link); needs the gmail token
+mail_context_days = 2
 calendars = "selected"             # "all", "selected" (ticked in Google Calendar) or a list of calendar ids
 exclude = []                       # calendar ids to skip (e.g. a holidays calendar)
 lookahead_days = 7                 # today + this many days, one file each: calendar/YYYY-MM-DD.md
