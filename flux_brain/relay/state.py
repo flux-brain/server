@@ -8,6 +8,8 @@ twenty keys were scattered through an 800-line module):
   message_failures             {message id: attempts} for the head of the queue only (inbound, fix 2)
   failures                     consecutive failed ticks (main: one ops alert at FAIL_ALERT_AFTER)
   posted                       outbound paths already posted (pruned to `cap` per top-level dir)
+  posted_sha                   {notify path: blob sha} of the version posted; an edit is posted again (absent until
+                               first run: the paths already posted are seeded with their current sha, not re-posted)
   posting                      {path: {sha, done}} resume record of a multi-part post that failed mid-way
   obsidian_notes               {inbox path: blob sha} as of the last tick (absent until the watcher's first run)
   obsidian_pending             typed notes waiting to settle; obsidian_fire_at: when they count
@@ -17,6 +19,9 @@ twenty keys were scattered through an 800-line module):
   fire_ceiling_until           no second start until the last one shows its marker; fire_alerted: alerted once
   fired_inbox                  the inbox paths the last start listed; rearmed: those re-armed once after a run
   run_active, marker           a fresh `.run/active` marker is being followed ({sha, started})
+  quiet_until                  no start before this: a run just ended, or a routine commit came after its marker
+  audit                        {tip, marker}: the last branch tip the commit audit checked, and whether it had a marker
+                               (absent until first run); late_commits: count of routine commits found without a marker
 
 Keys marked "absent until" are sentinels: their absence is what makes a feature initialise instead of firing for
 history, so load_state() must not fill them in.

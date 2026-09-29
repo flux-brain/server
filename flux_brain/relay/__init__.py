@@ -22,19 +22,21 @@ flux_brain.lib.
 Layout (2026-09-24, architecture review; one 800-line module before): `Relay` in this file composes one mixin per
 concern, each in its own module with the constants and comments that belong to it: discord (session, channels,
 post), inbound (filing), watch (Obsidian notes, server notes, memory proposals), fire (the routine start, the run
-marker, the manifest), outbound (posting files). state.py documents every key of state.json. Method names and the
-state file are unchanged, so the tests and the live state carry over.
+marker, the manifest), outbound (posting files), audit (routine commits made without the run marker, 2026-09-29).
+state.py documents every key of state.json. Method names and the state file are unchanged, so the tests and the live
+state carry over.
 """
 from ..config import CFG
 from ..lib.common import log, ops_alert
 from ..lib.captures import RELAY_NOTE, HOST_NOTE  # noqa: F401  re-exported: the tests and the docs refer to them here
 from ..lib.github import GitHub, session
 from ..lib.drive import Drive
-from . import state, discord, inbound, watch, fire, outbound, reactions  # noqa: F401  submodules, reachable as relay.<name>
+from . import state, discord, inbound, watch, fire, outbound, reactions, audit  # noqa: F401  submodules, reachable as relay.<name>
 from .state import state_file, load_state, save_state, prune_posted  # noqa: F401
 from .discord import DiscordMixin, DISCORD  # noqa: F401
 from .inbound import InboundMixin, MESSAGE_GIVE_UP  # noqa: F401
 from .watch import WatchMixin, RECONCILE_NOTE, RECONCILE_COALESCE, RECONCILE_MAX, reconcile_cmd, reconcile_log  # noqa: F401
+from .audit import AuditMixin
 from .fire import FireMixin, RUN_MARKER, MANIFEST_MAX, describe_inbox  # noqa: F401
 from .reactions import ReactionsMixin, REACTION_EVERY  # noqa: F401
 from .outbound import OutboundMixin, OUTBOUND_DIRS, MAX_POST_CHUNKS, is_question, question_text, is_run_summary, chunk_lines  # noqa: F401
@@ -43,14 +45,14 @@ __all__ = ["Relay", "main", "CFG", "FAIL_ALERT_AFTER", "RELAY_NOTE", "HOST_NOTE"
            "outbound", "state_file", "load_state", "save_state", "prune_posted", "DISCORD", "MESSAGE_GIVE_UP", "RECONCILE_NOTE",
            "RECONCILE_COALESCE", "RECONCILE_MAX", "reconcile_cmd", "reconcile_log", "RUN_MARKER", "MANIFEST_MAX", "describe_inbox",
            "OUTBOUND_DIRS", "MAX_POST_CHUNKS", "is_question", "question_text", "is_run_summary", "chunk_lines",
-           "reactions", "REACTION_EVERY"]
+           "reactions", "REACTION_EVERY", "audit"]
 
 FAIL_ALERT_AFTER = 20              # consecutive failed runs before alerting: since 2026-09-15 the relay runs
                                    # every 15 s (flux-relay-loop), so 20 runs ~ 5 minutes
                                    # (was 3 at the old 5-minute cadence; 3 x 15 s would page on a GitHub blip)
 
 
-class Relay(DiscordMixin, InboundMixin, WatchMixin, FireMixin, OutboundMixin, ReactionsMixin):
+class Relay(DiscordMixin, InboundMixin, WatchMixin, FireMixin, OutboundMixin, ReactionsMixin, AuditMixin):
     def __init__(self, state):
         self.state = state
         self.s = session(retry_writes=True)
@@ -95,6 +97,7 @@ def main():
         relay.log_channel = relay.find_log_channel()  # None until the log channel exists: then log_target() = channel
         filed = relay.inbound(channel)
         tree = relay.tree()  # after inbound, so this tick's Discord notes are in it (and excluded by RELAY_NOTE)
+        relay.audit_commits(tree, channel)  # run guard: late routine commits hold the next start; never raises
         relay.watch_obsidian_notes(tree, channel=channel)  # may set fire_pending (typed notes after settling, server notes now)
         relay.trigger_apply(tree)  # new memory proposals start the applier now instead of at its next cron tick
         relay.maybe_fire(filed, channel, tree)  # never raises: a failed start leaves captures for the hourly run

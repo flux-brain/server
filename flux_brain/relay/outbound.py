@@ -1,5 +1,6 @@
 """Outbound: new files under briefings/ and notify/ are posted once, split on line boundaries, resumable by part,
-questions with an @mention, run summaries to the log channel."""
+questions with an @mention, run summaries to the log channel; a notify/ file edited after it was posted is posted
+again, marked as updated (run guard, 2026-09-29)."""
 import urllib.parse
 
 from ..config import CFG
@@ -56,23 +57,39 @@ class OutboundMixin:
         # tree passed in by main() since 2026-09-15 (shared with watch_obsidian_notes, one GitHub call per tick)
         tree = tree if tree is not None else self.tree()
         posted = set(self.state.get("posted", []))
+        files = [e for e in tree if e["type"] == "blob" and e["path"].startswith(OUTBOUND_DIRS) and e["path"].endswith(".md")]
+        # Edited notices (run guard, 2026-09-29): a routine rewrote four already-posted `-filed.md` summaries on
+        # 2026-09-29 and the edits never reached Discord, because `posted` is keyed by path. `posted_sha` remembers
+        # the version posted of each notify/ file; a new version is posted again, marked as updated. Briefings are
+        # left out: a digest is read once, and a rewrite of it is not a new message. First run: seed, never re-post.
+        sent = self.state.get("posted_sha")
+        if sent is None:
+            sent = self.state["posted_sha"] = {e["path"]: e["sha"] for e in files
+                                               if e["path"] in posted and e["path"].startswith("notify/")}
+        for e in files:
+            if e["path"] in posted and e["path"].startswith("notify/") and e["path"] not in sent:
+                sent[e["path"]] = e["sha"]   # posted before posted_sha existed: its current version counts as posted
+        work = sorted((e for e in files if e["path"] not in posted
+                       or (e["path"].startswith("notify/") and sent.get(e["path"]) != e["sha"])), key=lambda e: e["path"])
         # Drop resume counters for files that are gone or already fully posted (deleted mid-post, say)
-        pending_paths = {e["path"] for e in tree if e["path"] not in posted}
+        pending_paths = {e["path"] for e in work}
         for path in [p for p in self.state.get("posting", {}) if p not in pending_paths]:
             self.state["posting"].pop(path)
-        new = sorted((e for e in tree if e["type"] == "blob"
-                      and e["path"].startswith(OUTBOUND_DIRS) and e["path"].endswith(".md")
-                      and e["path"] not in posted), key=lambda e: e["path"])
-        for e in new:
+        for e in work:
+            edited = e["path"] in posted
             body = self.blob_text(e["sha"]).strip()
             link = f"https://github.com/{CFG.vault_repo}/blob/{CFG.vault_branch}/{urllib.parse.quote(e['path'])}"
             head = "📰" if e["path"].startswith("briefings/") else "💬"
+            if edited:
+                head = "✏️ updated after it was posted:"
+                log(f"{e['path']} was edited after it was posted: posting the new version")
             # Discord caps a message at 2000 chars. Split on line boundaries into several posts
             # (2026-09-15: full drafts must arrive whole, the owner copies them from Discord); only past
             # MAX_POST_CHUNKS is the tail cut, with a link to the page.
             question = is_question(e["path"], body)
             if question:  # no file-name header: the mention and the question itself are what the owner sees
-                parts = chunk_lines(f"<@{CFG.owner_discord_id}> ❓ {question_text(body)}", 1900)
+                upd = "✏️ (updated) " if edited else ""
+                parts = chunk_lines(f"<@{CFG.owner_discord_id}> ❓ {upd}{question_text(body)}", 1900)
             else:
                 parts = chunk_lines(f"{head} **{e['path']}**\n{body}", 1900)
             # Routing (2026-09-22): run summaries are background -> log channel; questions, answers, drafts and the
@@ -104,6 +121,11 @@ class OutboundMixin:
             progress.pop(e["path"], None)
             posted.add(e["path"])
             self.state["posted"] = prune_posted(posted, {t["path"] for t in tree})
+            if e["path"].startswith("notify/"):
+                sent[e["path"]] = e["sha"]
+            keep = set(self.state["posted"])
+            self.state["posted_sha"] = {p: v for p, v in sent.items() if p in keep}
+            sent = self.state["posted_sha"]
             state.save_state(self.state)
             # name the channel (2026-09-22): the only proof of the two-channel routing outside Discord itself
             log(f"posted {e['path']} -> {'log' if target != channel else 'conversation'} channel")
