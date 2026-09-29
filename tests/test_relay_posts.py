@@ -320,7 +320,10 @@ def test_run_marker_blocks_while_fresh_then_start_goes_ahead(h):
     r.maybe_fire(0, "C", [blob(DISC), MARK])
     assert st.get("run_active") is True and not h.fired()
     r.maybe_fire(0, "C", [blob(DISC)])
-    assert "run_active" not in st and h.fired()
+    assert "run_active" not in st and not h.fired()     # run guard: the post-run quiet window holds it first
+    st["quiet_until"] = time.time() - 1
+    r.maybe_fire(0, "C", [blob(DISC)])
+    assert h.fired()
 
 
 def test_stale_marker_ignored(h):
@@ -460,3 +463,130 @@ def test_find_log_channel_cache_miss_and_names(h):
     r = h.relay({})
     r.s, r.guild = G(["general", "flux"]), "g"   # config names only (no legacy alias in the package)
     assert r.find_channel() == "id-flux" and r.find_log_channel() is None and r.state["log_channel_missing"] is True
+
+
+# ---------- run guard (2026-09-29) ----------
+NOTE = {"type": "blob", "path": "notify/2026-09-29T1101-filed.md", "sha": "n1"}
+
+
+def test_run_end_opens_the_quiet_window(h):
+    st = {"fire_pending": True}
+    r = h.relay(st)
+    r.blob_text = lambda sha: marker(60)
+    r.track_run_marker([blob(DISC), MARK], time.time())
+    r.track_run_marker([blob(DISC)], time.time())
+    assert st["quiet_until"] > time.time() + m.CFG.post_run_quiet - 5 and m.CFG.post_run_quiet == 120
+    r.maybe_fire(0, "C", [blob(DISC)])
+    assert not h.fired()
+
+
+def test_edited_notice_is_posted_again_marked_updated(h):
+    st = {}
+    r = h.relay(st)
+    r.log_channel = "L"
+    r.blob_text = lambda sha: f"version {sha}"
+    r.outbound("C", [NOTE])
+    assert len(h.calls) == 1 and st["posted_sha"] == {NOTE["path"]: "n1"}
+    r.outbound("C", [NOTE])
+    assert len(h.calls) == 1                                        # same version: nothing
+    r.outbound("C", [dict(NOTE, sha="n2")])
+    assert len(h.calls) == 2 and "✏️ updated" in h.calls[1][1]["content"] and "version n2" in h.calls[1][1]["content"]
+    assert chan(h.calls[1]) == "L" and st["posted_sha"] == {NOTE["path"]: "n2"} and st["posted"] == [NOTE["path"]]
+
+
+def test_posted_before_the_guard_is_seeded_not_reposted_and_briefings_never_repost(h):
+    st = {"posted": [NOTE["path"], DAILY["path"]]}
+    r = h.relay(st)
+    r.blob_text = lambda sha: "body"
+    r.outbound("C", [NOTE, DAILY])
+    assert h.calls == [] and st["posted_sha"] == {NOTE["path"]: "n1"}
+    r.outbound("C", [NOTE, dict(DAILY, sha="b9")])
+    assert h.calls == []
+
+
+def test_edited_question_pings_again(h):
+    st = {"posted": [QUEST["path"]], "posted_sha": {QUEST["path"]: "old"}}
+    r = h.relay(st)
+    r.blob_text = lambda sha: "> [!question]\n> Which one?"
+    r.outbound("C", [QUEST])
+    assert len(h.calls) == 1 and h.calls[0][1]["content"].startswith(f"<@{OWNER}> ❓ ✏️ (updated) Which one?")
+
+
+class FakeGH:
+    """compare / commit_files over a scripted history: commits = [(sha, author, message, marker status or None)]."""
+
+    def __init__(self, commits, tip="t2"):
+        self.commits, self.tip, self.fetched = commits, tip, []
+
+    def compare(self, base, head):
+        return [{"sha": c[0], "commit": {"author": {"name": c[1]}, "message": c[2]}} for c in self.commits]
+
+    def commit_files(self, sha):
+        self.fetched.append(sha)
+        st = next(c[3] for c in self.commits if c[0] == sha)
+        return [{"filename": "inbox/x.md", "status": "removed"}] + ([{"filename": ".run/active", "status": st}] if st else [])
+
+
+def audited(h, commits, start_marker=False, tip="t2"):
+    st = {"audit": {"tip": "t1", "marker": start_marker}}
+    r = h.relay(st)
+    r.log_channel = "L"
+    r.ghc = FakeGH(commits, tip)
+    r.audit_commits([blob(DISC)], "C")
+    return st, r
+
+
+def test_first_audit_seeds_without_checking_history(h):
+    st = {}
+    r = h.relay(st)
+    r.ghc = FakeGH([("a", "Claude", "late", None)])
+    r.audit_commits([blob(DISC), MARK], "C")
+    assert st["audit"] == {"tip": "t2", "marker": True} and r.ghc.fetched == [] and h.calls == []
+
+
+def test_clean_run_is_not_flagged_and_other_authors_are_not_fetched(h):
+    st, r = audited(h, [("s", "Claude", "run: start", "added"), ("x", "Owner", "inbox: capture", None),
+                        ("n", "Claude", "notify: answer", None), ("e", "Claude", "inbox: 3 capture(s) filed", "removed")])
+    assert h.calls == [] and "late_commits" not in st and "quiet_until" not in st
+    assert r.ghc.fetched == ["s", "n", "e"] and st["audit"] == {"tip": "t2", "marker": False}
+
+
+def test_second_thought_after_the_marker_is_flagged_once_and_holds_the_start(h):
+    st, r = audited(h, [("s", "Claude", "run: start", "added"), ("e", "Claude", "inbox: filed", "removed"),
+                        ("late1", "Claude", "notify: fix accidental overwrite", None), ("x", "Owner", "inbox: capture", None),
+                        ("s2", "Claude", "run: start", "added"), ("ok", "Claude", "fix index", "removed")])
+    assert st["late_commits"] == 1 and st["quiet_until"] > time.time() + 100
+    (post,) = [c for c in h.calls if c[0] == "discord"]
+    assert chan(post) == "L" and "`late1` notify: fix accidental overwrite" in post[1]["content"] and "`ok`" not in post[1]["content"]
+    st["fire_pending"] = True
+    r.maybe_fire(0, "C", [blob(DISC)])
+    assert not h.fired()
+
+
+def test_late_commit_at_the_start_of_the_range_uses_the_saved_marker_state(h):
+    st, _ = audited(h, [("late", "Claude", "inbox: fold in", None)], start_marker=False)
+    assert st["late_commits"] == 1
+    st, _ = audited(h, [("mid", "Claude", "inbox: wiki edits", None)], start_marker=True)
+    assert "late_commits" not in st
+
+
+def test_audit_errors_never_raise_and_keep_the_base(h):
+    class Boom(FakeGH):
+        def compare(self, base, head):
+            raise requests.ConnectionError("down")
+    st = {"audit": {"tip": "t1", "marker": False}}
+    r = h.relay(st)
+    r.ghc = Boom([])
+    r.audit_commits([blob(DISC)], "C")
+    assert st["audit"]["tip"] == "t1"
+
+
+def test_vanished_base_restarts_from_the_tip(h):
+    class Gone(FakeGH):
+        def compare(self, base, head):
+            raise requests.HTTPError("404", response=Resp(404))
+    st = {"audit": {"tip": "t1", "marker": False}}
+    r = h.relay(st)
+    r.ghc = Gone([])
+    r.audit_commits([blob(DISC)], "C")
+    assert st["audit"] == {"tip": "t2", "marker": False} and h.calls == []
