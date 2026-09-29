@@ -19,6 +19,8 @@ log_channel = "flux-log"           # muted log channel; while absent, everything
 fire_url = "https://api.anthropic.com/v1/claude_code/routines/<trigger id>/fire"
 min_interval_s = 180               # wait for a run marker before another start
 marker_fresh_s = 600               # a .run/active older than this is a crashed run's leftover
+post_run_quiet_s = 120             # no new start this long after a run ends (a late commit restarts the wait)
+author = "Claude"                  # git author name of the routines' commits (the relay audits them)
 
 [capture]
 settle_s = 60                      # an Obsidian note must stay unchanged this long before it counts

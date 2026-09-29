@@ -153,6 +153,24 @@ class GitHub:
                 pass  # a cache write failure only costs the next tick a full fetch
         return self._tree
 
+    @property
+    def tip(self):
+        """The branch tip sha as of the last tree() call (None before the first)."""
+        return self._tree_sha
+
+    def compare(self, base, head):
+        """The commits from `base` (excluded) to `head`, oldest first (GitHub caps the list at 250).
+        Raises requests.HTTPError; a 404 means `base` is gone (a force push)."""
+        r = self.get_raw(self._url(f"compare/{base}...{head}"))
+        r.raise_for_status()
+        return r.json().get("commits", [])
+
+    def commit_files(self, sha):
+        """The files one commit changed, each {filename, status: added/removed/modified/renamed, ...}."""
+        r = self.get_raw(self._url(f"commits/{sha}"))
+        r.raise_for_status()
+        return r.json().get("files", [])
+
     def blob_text(self, sha):
         r = self.get_raw(self._url(f"git/blobs/{sha}"))
         r.raise_for_status()

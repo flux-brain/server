@@ -66,6 +66,10 @@ class Config:
         self.fire_token = env.get("ROUTINE_FIRE_TOKEN", "")
         self.fire_min_interval = int(g("routine", "min_interval_s", 180))
         self.marker_fresh = int(g("routine", "marker_fresh_s", 600))
+        # run guard (2026-09-29): no start this long after a run ends or after a late routine commit; the git author
+        # name of the routines' commits, which the relay audits against the run marker
+        self.post_run_quiet = int(g("routine", "post_run_quiet_s", 120))
+        self.routine_author = g("routine", "author", "Claude")
         # capture
         self.phone_settle = int(g("capture", "settle_s", 60))
         self.max_attachment_mb = int(g("capture", "max_attachment_mb", 20))

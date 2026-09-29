@@ -63,6 +63,8 @@ class FireMixin:
             return  # a run (fired or scheduled) is working: start the next one when its marker is gone
         if now < st.get("fire_ceiling_until", 0):
             return  # our last start has not shown its marker yet: do not start a second run on top of it
+        if now < st.get("quiet_until", 0):
+            return  # run guard (2026-09-29): a run just ended or pushed after its marker; let its last push land
 
         waiting, settling = None, set()
         if tree is not None:
@@ -176,6 +178,9 @@ class FireMixin:
             elif not active and st.get("run_active"):
                 st.pop("run_active")
                 st.pop("fire_ceiling_until", None)
+                # run guard (2026-09-29): a run's second thoughts come in the minutes after its marker goes (5 of
+                # 45 runs on 2026-09-29); starting at once put the next run on top of them
+                st["quiet_until"] = now + CFG.post_run_quiet
                 inbox = {e["path"] for e in tree if e["type"] == "blob" and e["path"].startswith("inbox/")}
                 done = set(st.get("rearmed", []))
                 left = [p for p in st.get("fired_inbox", []) if p in inbox and p not in done]
