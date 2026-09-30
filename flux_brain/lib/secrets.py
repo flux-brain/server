@@ -1,6 +1,6 @@
 """One definition of "looks like a secret", shared by the relay, the modules and the tests, so they never drift apart.
 Structured token shapes only (webhook URLs, private keys, cloud API keys, GitHub/Slack/Stripe/GitLab/npm tokens, OAuth
-tokens, JWTs); a generic `password=` heuristic would cost false positives here."""
+tokens, JWTs, capability URLs); a generic `password=` heuristic would cost false positives here."""
 import re
 
 SECRET_PATTERNS = re.compile(
@@ -14,4 +14,7 @@ SECRET_PATTERNS = re.compile(
     r"|eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}"
     r"|aas_et/[A-Za-z0-9_+/=-]{20,}"
     r"|[sr]k_(live|test)_[A-Za-z0-9]{20,}|glpat-[A-Za-z0-9_-]{20,}|npm_[A-Za-z0-9]{36}"
+    # Capability URLs (2026-09-30): a link whose path carries a 32-hex secret (a 128-bit token, e.g. a personal
+    # config or download link) IS the credential. Exactly 32 hex, so git commit links (40) and digests (64) pass.
+    r"|https?://[^\s/]+/(?:[^\s/]+/)*(?<![0-9A-Fa-f])[0-9A-Fa-f]{32}(?![0-9A-Fa-f])(?:/[^\s<>\"')\]]*)?"
 )
