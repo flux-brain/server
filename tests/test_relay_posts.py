@@ -551,13 +551,28 @@ def test_clean_run_is_not_flagged_and_other_authors_are_not_fetched(h):
     assert r.ghc.fetched == ["s", "n", "e"] and st["audit"] == {"tip": "t2", "marker": False}
 
 
-def test_second_thought_after_the_marker_is_flagged_once_and_holds_the_start(h):
+def test_second_thought_pushed_with_the_final_commit_is_logged_only(h):
+    # refinement 2026-10-01: the removal and the extra commit arrive in one tip move, so GitHub never lacked the marker
     st, r = audited(h, [("s", "Claude", "run: start", "added"), ("e", "Claude", "inbox: filed", "removed"),
-                        ("late1", "Claude", "notify: fix accidental overwrite", None), ("x", "Owner", "inbox: capture", None),
+                        ("late1", "Claude", "inbox: fold in update", None), ("x", "Owner", "inbox: capture", None),
                         ("s2", "Claude", "run: start", "added"), ("ok", "Claude", "fix index", "removed")])
-    assert st["late_commits"] == 1 and st["quiet_until"] > time.time() + 100
+    assert st["late_same_push"] == 1 and "late_commits" not in st and "quiet_until" not in st
+    assert [c for c in h.calls if c[0] == "discord"] == []
+
+
+def test_same_push_holds_when_the_range_starts_without_a_marker(h):
+    st, _ = audited(h, [("e", "Claude", "run: end", "removed"), ("f", "Claude", "inbox: fold in", None)], start_marker=True)
+    assert st["late_same_push"] == 1 and "late_commits" not in st
+
+
+def test_push_after_github_showed_the_marker_gone_is_posted_and_holds_the_start(h):
+    st, r = audited(h, [("late1", "Claude", "notify: fix accidental overwrite", None), ("x", "Owner", "inbox: capture", None),
+                        ("s2", "Claude", "run: start", "added"), ("ok", "Claude", "fix index", "removed"),
+                        ("after", "Claude", "inbox: fold in", None)], start_marker=False)
+    assert st["late_commits"] == 1 and st["late_same_push"] == 1 and st["quiet_until"] > time.time() + 100
     (post,) = [c for c in h.calls if c[0] == "discord"]
-    assert chan(post) == "L" and "`late1` notify: fix accidental overwrite" in post[1]["content"] and "`ok`" not in post[1]["content"]
+    assert chan(post) == "L" and "`late1` notify: fix accidental overwrite" in post[1]["content"]
+    assert "`after`" not in post[1]["content"] and "`ok`" not in post[1]["content"]
     st["fire_pending"] = True
     r.maybe_fire(0, "C", [blob(DISC)])
     assert not h.fired()

@@ -21,7 +21,9 @@ twenty keys were scattered through an 800-line module):
   run_active, marker           a fresh `.run/active` marker is being followed ({sha, started})
   quiet_until                  no start before this: a run just ended, or a routine commit came after its marker
   audit                        {tip, marker}: the last branch tip the commit audit checked, and whether it had a marker
-                               (absent until first run); late_commits: count of routine commits found without a marker
+                               (absent until first run); late_commits: routine commits pushed after GitHub already showed
+                               the marker gone (posted, start held); late_same_push: late commits pushed together with
+                               the marker-removing commit (logged only)
 
 Keys marked "absent until" are sentinels: their absence is what makes a feature initialise instead of firing for
 history, so load_state() must not fill them in.
