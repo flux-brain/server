@@ -221,3 +221,13 @@ def test_pending_tap_is_rechecked_between_scans(monkeypatch):
     r.check_reactions(now=t0 + 45)                                    # nothing pending, no scan due: no call
     assert len(r.calls) == n
 
+
+
+def test_module_posts_suppress_link_previews():
+    # Discord's preview bot must never fetch a link quoted from an email (2026-09-30: a pasted personal link was fetched)
+    from flux_brain.lib import buttons
+    sent = {}
+    bot = object.__new__(buttons.Bot)
+    bot.call = lambda method, path, **kw: sent.update(kw) or {"id": "m1"}
+    assert bot.post("c1", "hello https://example.com") == "m1"
+    assert sent["json"]["flags"] & 4

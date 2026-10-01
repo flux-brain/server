@@ -23,6 +23,7 @@ SAMPLES = {
     "stripe live key": "sk_" + "live_" + A,
     "gitlab pat": "glpat" + "-" + A,
     "npm token": "npm" + "_" + ("a1" * 18),
+    "capability url": "https://" + "files.example/p/" + ("ab" * 16) + "/install.ps1",
 }
 CLEAN = [
     "the Discord token is read at run time from flux.env, never written to disk",
@@ -32,6 +33,8 @@ CLEAN = [
     "message id 1550276575860363285, session 1a0a9752acb.49cbaa21ee94a049",
     "https://discord.com/channels/100000000000000002/100000000000000003",
     "ya29 is the prefix Google uses; eyJ starts a base64 JSON header",
+    "https://github.com/org/repo/commit/" + ("ab" * 20),
+    "https://example.com/docs/page?id=42",
 ]
 
 
@@ -47,3 +50,9 @@ def test_clean_prose_does_not_match(text):
 
 def test_redaction_keeps_the_surrounding_text():
     assert SECRET_PATTERNS.sub("[REDACTED]", "key " + SAMPLES["jwt"] + " end") == "key [REDACTED] end"
+
+
+def test_capability_url_is_redacted_whole():
+    # the pasted PowerShell line from an email: the URL goes, the command around it stays readable
+    line = "PS> iwr https://" + "files.example/p/" + ("0f" * 16) + "/install.ps1 -OutFile x.ps1"
+    assert SECRET_PATTERNS.sub("[REDACTED]", line) == "PS> iwr [REDACTED] -OutFile x.ps1"
