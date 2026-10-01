@@ -111,8 +111,10 @@ class Bot:
         raise RuntimeError(f"channel #{names[0]} not visible to the bot")
 
     def post(self, channel, content):
+        # flags=4 (SUPPRESS_EMBEDS, 2026-09-30): module posts quote outside content (email snippets, Drive names),
+        # so Discord must not unfurl their links: its preview bot would fetch whatever URL a sender pasted.
         return self.call("POST", f"/channels/{channel}/messages", json={
-            "content": content[:1990], "allowed_mentions": {"parse": []}})["id"]
+            "content": content[:1990], "allowed_mentions": {"parse": []}, "flags": 4})["id"]
 
     def react(self, channel, message, emoji):
         self.call("PUT", f"/channels/{channel}/messages/{message}/reactions/{urllib.parse.quote(emoji)}/@me")
