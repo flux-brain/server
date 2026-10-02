@@ -329,7 +329,7 @@ def test_run_marker_blocks_while_fresh_then_start_goes_ahead(h):
 def test_stale_marker_ignored(h):
     st = {"fire_pending": True}
     r = h.relay(st)
-    r.blob_text = lambda sha: marker(700)
+    r.blob_text = lambda sha: marker(1300)   # older than marker_fresh_s (default 1200 s)
     r.maybe_fire(0, "C", [blob(DISC), MARK])
     assert not st.get("run_active") and h.fired()
 
