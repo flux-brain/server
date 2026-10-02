@@ -165,6 +165,26 @@ def test_parse_actions_ids_and_wrapped_line():
     assert [a[2] for a in p["actions"]] == ["a1b2", "c3d4", "e5f6"] and p["actions"][1][1] is True and p["status"] == "active"
 
 
+def test_own_id_is_the_last_one_when_the_text_cites_another_action():
+    """An action that cites another action's id keeps its OWN id (the last one), so each action gets its own task."""
+    page = PAGE.replace("- [x] Book the call ^c3d4", "- [x] Book the call, see ^a1b2 for the recap ^c3d4")
+    p = tk.parse_page(page)
+    assert [a[2] for a in p["actions"]] == ["a1b2", "c3d4", "e5f6"]
+    assert p["actions"][1][0] == "Book the call, see ^a1b2 for the recap"   # the citation stays in the text
+    s = make({"project-x": page})
+    s.tick()
+    lid = s.st["projects"]["project-x"]["list_id"]
+    assert [t["notes"] for t in s.api.store[lid]["tasks"]] == ["^a1b2", "^c3d4", "^e5f6"]   # three tasks, not two
+
+
+def test_id_followed_by_a_note_is_still_found_and_task_notes_use_their_first_id():
+    assert tk.split_action_id("Order the certificate ^c3d4 (done early)") == ("Order the certificate (done early)", "c3d4")
+    assert tk.split_action_id("No id here") == ("No id here", None)
+    # task notes start with the id; text the owner types after it may cite another one
+    snap = tk.snapshot([{"id": "T1", "title": "x", "notes": "^a1b2\nsee also ^zz99 later", "status": "needsAction"}])
+    assert snap["T1"]["aid"] == "a1b2"
+
+
 def test_first_render_creates_list_and_tasks_in_page_order():
     s, lid = synced()
     L = s.api.store[lid]
