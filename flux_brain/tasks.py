@@ -50,11 +50,16 @@ ONCE = os.environ.get("TASKS_ONCE") == "1"   # one tick, then exit (tests, hand 
 
 
 # ---------- pure helpers (the vault side; shared shape with the Keep module) ----------
-def split_action_id(text):
-    """(action text without its `^id`, the id or None)."""
-    m = ACTION_ID.search(text)
-    if not m:
+def split_action_id(text, last=True):
+    """(action text without its `^id`, the id or None).
+
+    An action's own id is the LAST ` ^id` in its text: the text may cite other actions (`see ^a1b2 for ...`) before
+    it, and a done action may carry a short note after it. Taking the first one gave two actions the same id, so
+    they shared one task and the citing action had none. `last=False` is for task notes, which START with the id."""
+    found = list(ACTION_ID.finditer(text))
+    if not found:
         return text.strip(), None
+    m = found[-1] if last else found[0]
     return (text[:m.start()] + text[m.end():]).strip(), m.group(1)
 
 
@@ -261,7 +266,7 @@ def snapshot(tasks):
     """{tid: {t, c, aid}} in list order (the API returns tasks by position)."""
     out = {}
     for t in tasks:
-        aid = split_action_id(" " + (t.get("notes") or "").strip())[1]   # notes hold "^a1b2"
+        aid = split_action_id(" " + (t.get("notes") or "").strip(), last=False)[1]   # notes start with "^a1b2"
         email = next((l.get("link") for l in t.get("links") or [] if l.get("type") == "email"), None)
         out[t["id"]] = {"t": (t.get("title") or "").strip(), "c": t.get("status") == "completed", "aid": aid,
                         **({"email": email} if email else {})}
