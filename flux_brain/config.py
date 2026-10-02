@@ -65,7 +65,7 @@ class Config:
         self.fire_url = g("routine", "fire_url", "")
         self.fire_token = env.get("ROUTINE_FIRE_TOKEN", "")
         self.fire_min_interval = int(g("routine", "min_interval_s", 180))
-        self.marker_fresh = int(g("routine", "marker_fresh_s", 600))
+        self.marker_fresh = int(g("routine", "marker_fresh_s", 1200))
         # run guard (2026-09-29): no start this long after a run ends or after a late routine commit; the git author
         # name of the routines' commits, which the relay audits against the run marker
         self.post_run_quiet = int(g("routine", "post_run_quiet_s", 120))
