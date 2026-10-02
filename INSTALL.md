@@ -139,7 +139,9 @@ in `#flux` and watch it react within 15 seconds.
 - **Google Keep**: not shipped. Keep has no public API for personal accounts; the only route is an
   unofficial library with a full-account master token, which is why this project uses Tasks instead.
 - **Gmail feed**: label a conversation in Gmail and it is filed as one capture (messages oldest first,
-  attachments through the same converters as Discord ones), then relabelled `<label>/Filed`.
+  attachments through the same converters as Discord ones), then relabelled `<label>/Filed`. A filed conversation
+  stays followed: a reply that arrives in it later is filed by itself as a `kind: followup` capture, with no new
+  label or tap (`[gmail] follow_threads`, on by default; `follow_days` = how far back a reply is looked for).
   1. Enable the **Gmail API** on the same Cloud project as Drive; reuse the Desktop OAuth client.
   2. On a machine with a browser: `flux-gmail-auth client_secret.json` (scope `gmail.modify`: read and
      label changes, it cannot send). It writes `gmail-token.json` (mode 600) into `FLUX_HOME`; copy it to
