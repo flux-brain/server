@@ -217,3 +217,147 @@ def test_originals_go_to_drive_by_default(monkeypatch):
     ids, path = r.file_thread("T1", ["m1"])
     assert len(uploads) == 2 and uploads[0].endswith("-gmail-m1.eml") and uploads[1].endswith("-invoice.pdf")
     assert "Original email in Google Drive" in dict(puts)[path]
+
+
+# ---------- the follow pass: a filed conversation stays followed ([gmail] follow_threads) ----------
+class FollowHarness:
+    """run() over an in-memory mailbox: `labelled` = messages carrying the label, `incoming` = what the recent-incoming
+    search returns, `threads` = {thread id: [{"id", "labelIds"}]}, `filed_label_threads` = conversations with Filed."""
+
+    def __init__(self, monkeypatch, follow=True):
+        self.calls, self.filed_calls = [], []
+        monkeypatch.setattr(gr, "save_state", lambda st: None)
+        monkeypatch.setattr(gr, "DRY", False)
+        monkeypatch.setattr(gr, "ops_alert", lambda text: None)
+        monkeypatch.setattr(gr.CFG, "gmail_follow_threads", follow)
+        monkeypatch.setattr(gr.CFG, "gmail_follow_days", 3)
+
+    def make(self, st, labelled=(), incoming=(), threads=None, filed_label_threads=()):
+        r = gr.GmailRelay.__new__(gr.GmailRelay)
+        r.st = {"filed": {}, "failures": 0, **st}
+        r.labels = {gr.CFG.gmail_label: "L1", gr.CFG.gmail_filed_label: "L2"}
+        r.label_ids = lambda: r.labels
+
+        def api(method, path, **kw):
+            params = kw.get("params") or {}
+            self.calls.append((method, path, params, kw.get("json")))
+            if path == "/messages":
+                return {"messages": list(incoming if "q" in params else labelled)}
+            if path == "/threads":
+                return {"threads": [{"id": t} for t in filed_label_threads]}
+            if path.startswith("/threads/"):
+                return {"messages": (threads or {})[path.split("/")[2]]}
+            return {}
+        r.api = api
+
+        def file_thread(thread_id, ids, followup=False):
+            self.filed_calls.append((thread_id, list(ids), followup))
+            return list(ids), "inbox/x.md"
+        r.file_thread = file_thread
+        return r
+
+    def thread_reads(self):
+        return [c[1] for c in self.calls if c[1].startswith("/threads/")]
+
+    def relabelled(self):
+        return [c[3]["ids"] for c in self.calls if c[1] == "/messages/batchModify"]
+
+
+def test_new_message_in_a_filed_conversation_is_filed_as_a_followup(monkeypatch):
+    fh = FollowHarness(monkeypatch)
+    r = fh.make({"filed": {"f1": 1}, "filed_threads": {"T1": 1}, "filed_threads_refreshed": gr.time.time()},
+                incoming=[{"id": "n1", "threadId": "T1"}],
+                threads={"T1": [{"id": "f1", "labelIds": ["L2"]}, {"id": "s1", "labelIds": ["SENT"]},
+                                {"id": "d1", "labelIds": ["DRAFT"]}, {"id": "n1", "labelIds": ["INBOX"]}]})
+    assert r.run() == 1
+    # only the messages not filed yet, the owner's own reply included for context, the draft left out
+    assert fh.filed_calls == [("T1", ["s1", "n1"], True)]
+    assert fh.relabelled() == [["s1", "n1"]] and {"s1", "n1"} <= set(r.st["filed"])
+    assert fh.calls[-1][3]["addLabelIds"] == ["L2"]   # now Filed, so the next run finds nothing
+
+
+def test_nothing_new_in_a_filed_conversation_files_nothing(monkeypatch):
+    fh = FollowHarness(monkeypatch)
+    r = fh.make({"filed_threads": {"T1": 1}, "filed_threads_refreshed": gr.time.time()},
+                incoming=[{"id": "f2", "threadId": "T1"}],   # recent, but it already carries Filed (state file lost)
+                threads={"T1": [{"id": "f1", "labelIds": ["L2"]}, {"id": "f2", "labelIds": ["L2", "INBOX"]}]})
+    assert r.run() == 0 and fh.filed_calls == [] and fh.relabelled() == []
+    assert "f2" in r.st["filed"]                 # remembered, so the conversation is not read again next minute
+    r.run()
+    assert fh.thread_reads() == ["/threads/T1"]
+
+
+def test_incoming_message_of_a_conversation_never_filed_is_ignored(monkeypatch):
+    fh = FollowHarness(monkeypatch)
+    r = fh.make({"filed_threads": {"T1": 1}, "filed_threads_refreshed": gr.time.time()},
+                incoming=[{"id": "x1", "threadId": "T9"}])
+    assert r.run() == 0 and fh.filed_calls == [] and fh.thread_reads() == []
+
+
+def test_relabelled_conversation_goes_through_the_label_pass_only(monkeypatch):
+    fh = FollowHarness(monkeypatch)
+    r = fh.make({"filed_threads": {"T1": 1}, "filed_threads_refreshed": gr.time.time()},
+                labelled=[{"id": "n1", "threadId": "T1"}], incoming=[{"id": "n1", "threadId": "T1"}],
+                threads={"T1": [{"id": "f1", "labelIds": ["L2"]}, {"id": "n1", "labelIds": ["L1", "INBOX"]}]})
+    assert r.run() == 1 and fh.filed_calls == [("T1", ["n1"], False)] and fh.thread_reads() == []
+
+
+def test_message_with_the_label_in_another_run_is_left_to_the_label_pass(monkeypatch):
+    fh = FollowHarness(monkeypatch)
+    r = fh.make({"filed_threads": {"T1": 1}, "filed_threads_refreshed": gr.time.time()},
+                incoming=[{"id": "n1", "threadId": "T1"}, {"id": "n2", "threadId": "T1"}],
+                threads={"T1": [{"id": "n1", "labelIds": ["L1"]}, {"id": "n2", "labelIds": ["INBOX"]}]})
+    r.run()
+    assert fh.filed_calls == [("T1", ["n2"], True)]
+
+
+def test_conversation_filed_by_the_tasks_hand_off_is_not_filed_again(monkeypatch):
+    fh = FollowHarness(monkeypatch)
+    r = fh.make({"filed": {"m1": 1, "m2": 1}, "filed_threads": {"T1": 1}, "filed_threads_refreshed": gr.time.time()},
+                incoming=[{"id": "n1", "threadId": "T1"}],   # m1, m2 were filed without the Filed label
+                threads={"T1": [{"id": "m1", "labelIds": ["INBOX"]}, {"id": "m2", "labelIds": ["SENT"]},
+                                {"id": "n1", "labelIds": ["INBOX"]}]})
+    r.run()
+    assert fh.filed_calls == [("T1", ["n1"], True)]
+
+
+def test_first_run_learns_the_filed_conversations_from_the_label_then_daily(monkeypatch):
+    fh = FollowHarness(monkeypatch)
+    r = fh.make({}, incoming=[{"id": "n1", "threadId": "T7"}], filed_label_threads=["T7", "T8"],
+                threads={"T7": [{"id": "f1", "labelIds": ["L2"]}, {"id": "n1", "labelIds": ["INBOX"]}]})
+    r.run()
+    assert set(r.st["filed_threads"]) == {"T7", "T8"} and fh.filed_calls == [("T7", ["n1"], True)]
+    r.run()
+    assert [c[1] for c in fh.calls].count("/threads") == 1   # the label listing is not repeated within a day
+
+
+def test_label_pass_first_and_a_shared_budget(monkeypatch):
+    fh = FollowHarness(monkeypatch)
+    monkeypatch.setattr(gr, "MAX_PER_RUN", 1)
+    r = fh.make({"filed_threads": {"T1": 1}, "filed_threads_refreshed": gr.time.time()},
+                labelled=[{"id": "a1", "threadId": "TA"}], incoming=[{"id": "n1", "threadId": "T1"}],
+                threads={"T1": [{"id": "n1", "labelIds": ["INBOX"]}]})
+    r.run()
+    assert fh.filed_calls == [("TA", ["a1"], False)] and fh.thread_reads() == []
+    assert "TA" in r.st["filed_threads"]          # a conversation filed by label is followed from now on
+
+
+def test_follow_threads_off_changes_nothing(monkeypatch):
+    fh = FollowHarness(monkeypatch, follow=False)
+    r = fh.make({"filed_threads": {"T1": 1}}, incoming=[{"id": "n1", "threadId": "T1"}],
+                threads={"T1": [{"id": "n1", "labelIds": ["INBOX"]}]})
+    assert r.run() == 0 and fh.filed_calls == []
+    assert all("q" not in c[2] and c[1] != "/threads" for c in fh.calls)
+
+
+def test_followup_capture_says_so(monkeypatch):
+    r, uploads, puts = _relay_with_one_email(monkeypatch, mod_drive=False, to_drive=False)
+    ids, path = r.file_thread("T1", ["m1"], followup=True)
+    capture = dict(puts)[path]
+    assert "kind: followup" in capture and 'thread_id: "T1"' in capture
+    assert "New message in a conversation already filed" in capture and "labelled" not in capture
+    plain = dict(_relay_with_one_email(monkeypatch, mod_drive=False, to_drive=False)[2])
+    assert plain == {}   # nothing written until file_thread runs
+    r2, _, puts2 = _relay_with_one_email(monkeypatch, mod_drive=False, to_drive=False)
+    _, path2 = r2.file_thread("T1", ["m1"])
+    assert "kind: followup" not in dict(puts2)[path2]
