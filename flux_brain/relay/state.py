@@ -11,6 +11,8 @@ twenty keys were scattered through an 800-line module):
   posted_sha                   {notify path: blob sha} of the version posted; an edit is posted again (absent until
                                first run: the paths already posted are seeded with their current sha, not re-posted)
   posting                      {path: {sha, done}} resume record of a multi-part post that failed mid-way
+  translations_posted          {raw/translations path: {sha, voice_message, language, emoji, at}} of each translation a
+                               flag tap posted; a rewrite of the file is posted again (kept 24 h)
   obsidian_notes               {inbox path: blob sha} as of the last tick (absent until the watcher's first run)
   obsidian_pending             typed notes waiting to settle; obsidian_fire_at: when they count
   reconcile_first, reconcile_hold_until   the coalescing window for memory-reconcile-only starts
