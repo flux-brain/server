@@ -6,13 +6,16 @@ from datetime import datetime, timezone
 from ..config import CFG
 from ..lib.common import log
 from ..lib.secrets import SECRET_PATTERNS
-from ..lib.extract import extract_text, attachment_text_file   # (tests stub extract_text on this module)
+from ..lib.extract import extract_text, attachment_text_file, is_audio   # (tests stub extract_text on this module)
 from ..lib.links import drive_links, text_wanted
 from ..lib.linked import details_line, text_file
 from . import state
 
 MESSAGE_GIVE_UP = 3                # (2026-09-17 code review fix 2) strict filing attempts for ONE message before its
                                    # failing attachments are listed as not fetched and the queue moves on (file_guarded)
+ECHO_MAX = 1500                    # characters of a transcript quoted back in the channel (a Discord message holds
+                                   # 2000); a longer one is cut there, the whole text is in the vault either way
+ECHO_STAMP = re.compile(r"^\[\d{2,}:\d{2}\] ", re.M)   # transcribe()'s per-segment [mm:ss] prefix, noise in a chat reply
 # Attachments go to cloud storage when the Drive module is on: flux_brain.lib.drive.
 # A capture matching SECRET_PATTERNS is NOT filed: the repo is synced to a phone and a laptop, so a pasted key
 # would spread (the one definition: flux_brain.lib.secrets).
@@ -65,8 +68,10 @@ class InboundMixin:
         fails.pop(m["id"], None)
         return filed
 
-    def attachment_entry(self, m, a, name, stamp, ts):
+    def attachment_entry(self, m, a, name, stamp, ts, heard=None):
         """One `## Attachments` line for the note: download, Drive upload, text extraction, text file in GitHub.
+        `heard`: a list that receives (name, transcript, method) for each audio file that was transcribed, for the
+        echo file_message posts once the capture is filed.
         Raises when the download, the upload or the text-file put fails (file_guarded decides what that means);
         an extraction failure is recorded in the line, never raised (the capture still lands)."""
         dl = self.s.get(a["url"], timeout=120)
@@ -97,9 +102,35 @@ class InboundMixin:
                 name, link, mime, kb, method, att_text, m["id"], f"{ts:%Y-%m-%dT%H:%MZ}").encode(),
                 f"inbox: text of attachment {name}")
             entry += f", text: [[{text_path}|{name} (text)]]"
+            # a failed transcription is not echoed: there is nothing to correct, and the note's line already says so
+            if heard is not None and is_audio(mime, name) and not method.startswith("extraction failed"):
+                heard.append((name, att_text or "", method))
         else:
             entry += ", no text (type not converted)"
         return entry
+
+    def echo_transcripts(self, channel, m, heard, capture):
+        """Reply to a voice note with what was heard ([capture] echo_transcripts). The transcript otherwise goes
+        straight to the vault and the routine, so a misheard name, amount or date would be filed unseen; quoted
+        back here, the owner corrects it with a one-line reply (filed as a capture with in_reply_to, like any
+        reply). The first line names `capture`, the voice note's inbox file: in_reply_to keeps only the start of
+        the replied-to message, and that path is what ties a correction to its note however long the transcript.
+        Secret-shaped text is redacted (the message is not the owner's typing, so file_message's refusal did not
+        see it), previews are suppressed and there is no mention beyond the reply itself. Best effort: the capture is already
+        filed, so a failed post is logged, never raised (a raise would file the message again next tick)."""
+        for i, (name, text, method) in enumerate(heard):
+            said = SECRET_PATTERNS.sub("[REDACTED]", ECHO_STAMP.sub("", text)).strip()
+            if not said:
+                content = f"🎙️ `{name}` ({capture}): no speech recognised ({method})."
+            else:
+                cut = len(said) > ECHO_MAX
+                quote = "\n".join("> " + line for line in said[:ECHO_MAX].splitlines())
+                content = (f"🎙️ Heard ({capture}, {method}):\n{quote}" + ("\n… cut here, the whole transcript is filed." if cut else "")
+                           + "\nReply to correct anything misheard.")
+            try:
+                self.post(channel, content, reply_to=m["id"], key=f"heard-{m['id']}-{i}", suppress_embeds=True)
+            except Exception as exc:  # noqa: BLE001
+                log(f"transcript echo not posted ({exc.__class__.__name__})")
 
     def link_entry(self, m, url, fid, folder, want_text, stamp, ts, lenient):
         """One `## Links` line for a Google Drive / Docs link ([drive] links, 2026-09-28): the file's name, type,
@@ -144,7 +175,7 @@ class InboundMixin:
             return 0
         ts = datetime.fromisoformat(m["timestamp"]).astimezone(timezone.utc)
         stamp = ts.strftime("%Y-%m-%dT%H%MZ")
-        lines, not_fetched = [], []
+        lines, not_fetched, heard = [], [], []
         if m.get("attachments"):
             self.seen(channel, m["id"])  # P9a: immediate signal before the slow part
         for a in m.get("attachments", []):
@@ -153,7 +184,7 @@ class InboundMixin:
                 lines.append(f"- attachment `{name}` skipped (over {CFG.max_attachment_mb} MB)")
                 continue
             try:
-                lines.append(self.attachment_entry(m, a, name, stamp, ts))
+                lines.append(self.attachment_entry(m, a, name, stamp, ts, heard))
             except Exception as exc:  # noqa: BLE001 - download, Drive or GitHub failure
                 if not lenient:
                     raise  # strict attempt: retried next tick, the note must not land without its attachment
@@ -177,6 +208,8 @@ class InboundMixin:
         self.ack(channel, m["id"], "📥 Filed to inbox.")
         if m.get("attachments") or link_lines:
             self.unseen(channel, m["id"])
+        if heard and CFG.echo_transcripts:
+            self.echo_transcripts(channel, m, heard, f"inbox/{stamp}-{m['id']}.md")   # after the ✅: the capture is safe before anything optional
         if not_fetched:
             # Best effort, like the 👀 reaction: the capture is filed either way, and this reply is the only place
             # the owner learns that a file did not make it (the note is read by the routine, not by him).

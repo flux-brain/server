@@ -233,6 +233,12 @@ def extract_iwork(data: bytes, name: str):
     return "\n\n".join(parts), "Apple iWork document body (styling lost)"
 
 
+def is_audio(mime: str, name: str) -> bool:
+    """True for what extract_text() sends to transcribe() (extension first, then MIME). One definition, so the relay's
+    transcript echo (relay/inbound.py) can never disagree with the dispatch below about what a voice note is."""
+    return os.path.splitext(name.lower())[1] in AUDIO_EXTS or (mime or "").startswith("audio/")
+
+
 def extract_text(data: bytes, mime: str, name: str):
     """Dispatch on extension (then MIME): -> (text, method), or (None, None) for types kept link-only
     (video, archives, unknown binaries)."""
@@ -245,7 +251,7 @@ def extract_text(data: bytes, mime: str, name: str):
         return extract_document(data, DOC_EXTS[suffix], suffix)
     if suffix in IWORK_EXTS or "iwork" in (mime or ""):
         return extract_iwork(data, name)
-    if suffix in AUDIO_EXTS or (mime or "").startswith("audio/"):
+    if is_audio(mime, name):
         with tempfile.TemporaryDirectory(prefix="vault-relay-") as tmp:
             src = os.path.join(tmp, "in" + (suffix or ".ogg"))
             with open(src, "wb") as f:
@@ -292,4 +298,4 @@ def extracted_section(extracts):
         parts.append(f"\n### {name} ({method}{extra})\n\n~~~~text\n{text or '(no text found)'}\n~~~~\n")
     return "".join(parts)
 
-__all__ = ['OCR_LANGS', 'OCR_DPI', 'MIN_PAGE_CHARS', 'MAX_TEXT_PAGES', 'MAX_OCR_PAGES', 'MAX_EXTRACT_CHARS', 'IMAGE_EXTS', 'DOC_EXTS', 'AUDIO_EXTS', 'IWORK_EXTS', 'IWORK_BODY', 'IWORK_NOISE', 'IWORK_RUN', 'MAX_IWORK_CHARS', 'MAX_SHEET_ROWS', 'extract_pdf_or_image', 'transcribe', 'extract_document', 'extract_iwork', 'extract_text', 'attachment_text_file', 'extracted_section']
+__all__ = ['OCR_LANGS', 'OCR_DPI', 'MIN_PAGE_CHARS', 'MAX_TEXT_PAGES', 'MAX_OCR_PAGES', 'MAX_EXTRACT_CHARS', 'IMAGE_EXTS', 'DOC_EXTS', 'AUDIO_EXTS', 'is_audio', 'IWORK_EXTS', 'IWORK_BODY', 'IWORK_NOISE', 'IWORK_RUN', 'MAX_IWORK_CHARS', 'MAX_SHEET_ROWS', 'extract_pdf_or_image', 'transcribe', 'extract_document', 'extract_iwork', 'extract_text', 'attachment_text_file', 'extracted_section']

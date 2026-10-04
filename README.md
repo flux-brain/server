@@ -8,7 +8,8 @@ What it does, every 15 seconds:
 
 - **Inbound:** new messages in your capture channel (`#flux`) become `inbox/` files in the vault, with a
   reaction to confirm; attachments (photos, PDFs, Office files, emails, voice memos) are converted to text
-  for Claude and, with the Drive module, stored in your cloud folder. Optionally, a Google Docs or Drive link
+  for Claude and, with the Drive module, stored in your cloud folder. A voice note is answered with its
+  transcript, so you can correct a misheard word with a reply (`[capture] echo_transcripts`). Optionally, a Google Docs or Drive link
   in a message is looked up (name, type, folder), and its text copied in too (`+text`, or by default with
   `links = "text"`, `-text` to opt out).
 - **Start the run:** as soon as a capture is filed, the relay starts the `vault-inbox` routine through its
