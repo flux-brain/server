@@ -200,6 +200,20 @@ def test_a_tap_posts_the_prepared_translation(make, monkeypatch):
     content, kw = r.posts[0]
     assert content.startswith("🇬🇧 English:\n> Hello.") and "ghp_" not in content and "[REDACTED]" in content
     assert kw == {"reply_to": "102", "key": "translation-102-en", "suppress_embeds": True}
+    # the owner then corrects the transcript and the routine rewrites the file: the new version is posted, once
+    assert r.state["translations_posted"]["raw/translations/2026-09-17T1002Z-102-en.md"]["sha"] == "s1"
+    r.posts.clear()
+    assert r.translation_requests(tree, "C") == 0 and not r.posts                 # unchanged: nothing
+    r.blob_text = lambda sha: "Hello, corrected."
+    tree[0] = {"path": "raw/translations/2026-09-17T1002Z-102-en.md", "sha": "s9"}
+    r.translation_requests(tree, "C")
+    (content, kw), = r.posts
+    assert content == "✏️ 🇬🇧 English, corrected:\n> Hello, corrected." and kw["reply_to"] == "102" and kw["key"] == "translation-102-s9"
+    r.posts.clear()
+    r.translation_requests(tree, "C")
+    assert not r.posts                                                            # posted once
+    r.translation_requests([], "C")
+    assert r.state["translations_posted"] == {}                                   # the file is gone: forgotten
 
 
 def test_a_tap_waits_for_the_notes_own_run_then_falls_back_to_a_request(make, monkeypatch):
