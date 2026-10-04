@@ -33,7 +33,7 @@ def reconcile_log():
 # obsidian notes trigger"). GitSync pushes while a note is still being typed (and Obsidian creates an EMPTY file on
 # New note), so a note must stay unchanged for CFG.phone_settle seconds before it counts. Notes the relay writes itself
 # (RELAY_NOTE) are excluded: they already started a run through `filed`. Notes other programs on this server write
-# COMPLETE in one commit (HOST_NOTE: Keep, Gmail, memory reconcile, Tasks, WhatsApp, Telegram, Signal) start the routine on the tick
+# COMPLETE in one commit (HOST_NOTE: Keep, Gmail, memory reconcile, Tasks, WhatsApp, Telegram, Signal, Google Messages) start the routine on the tick
 # they appear (2026-09-17, responsiveness review P1). Both patterns and the wording per kind: flux_brain.lib.captures.
 
 
