@@ -89,6 +89,9 @@ class Config:
         # a misheard name or figure and corrects it with a reply, which the routine applies to what it filed
         # (relay/inbound.py echo_transcripts)
         self.echo_transcripts = bool(g("capture", "echo_transcripts", True))
+        # flag buttons under a transcript echo: the languages the owner can ask a translation into (codes from
+        # relay/inbound.py TRANSLATE_LANGS, e.g. ["en", "fr"]); empty = no buttons
+        self.translate_to = [str(c).lower() for c in (g("capture", "translate_to", []) or [])]
         # paths
         self.state_dir = self.home / "state"
         self.log_dir = self.home / "logs"

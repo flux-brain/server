@@ -1,9 +1,11 @@
 """Inbound: new human messages in the conversation channel become inbox/ captures (attachments through Drive and the
 text extractors), with a per-message failure count so one bad message never blocks the queue for good."""
 import re
+import urllib.parse
 from datetime import datetime, timezone
 
 from ..config import CFG
+from ..lib import buttons
 from ..lib.common import log
 from ..lib.secrets import SECRET_PATTERNS
 from ..lib.extract import extract_text, attachment_text_file, is_audio   # (tests stub extract_text on this module)
@@ -16,6 +18,13 @@ MESSAGE_GIVE_UP = 3                # (2026-09-17 code review fix 2) strict filin
 ECHO_MAX = 1500                    # characters of a transcript quoted back in the channel (a Discord message holds
                                    # 2000); a longer one is cut there, the whole text is in the vault either way
 ECHO_STAMP = re.compile(r"^\[\d{2,}:\d{2}\] ", re.M)   # transcribe()'s per-segment [mm:ss] prefix, noise in a chat reply
+# Translation buttons ([capture] translate_to): flags under a transcript echo. A tap (after the usual grace period)
+# files a `translate` capture and the routine posts the translation; the server has no language model of its own.
+TRANSLATE_LANGS = {"en": ("🇬🇧", "English"), "fr": ("🇫🇷", "French"), "it": ("🇮🇹", "Italian"), "es": ("🇪🇸", "Spanish"),
+                   "de": ("🇩🇪", "German"), "pt": ("🇵🇹", "Portuguese")}
+TRANSLATE_TTL_S = 24 * 3600        # how long the flags stay live (each tracked post costs one request per flag a minute)
+SURE_LANGUAGE = 80                 # % from which the detected language is trusted: no flag for a note's own language
+HEARD_LANGUAGE = re.compile(r"language (\w+) \((\d+)%\)")   # in transcribe()'s method line
 # Attachments go to cloud storage when the Drive module is on: flux_brain.lib.drive.
 # A capture matching SECRET_PATTERNS is NOT filed: the repo is synced to a phone and a laptop, so a pasted key
 # would spread (the one definition: flux_brain.lib.secrets).
@@ -70,8 +79,8 @@ class InboundMixin:
 
     def attachment_entry(self, m, a, name, stamp, ts, heard=None):
         """One `## Attachments` line for the note: download, Drive upload, text extraction, text file in GitHub.
-        `heard`: a list that receives (name, transcript, method) for each audio file that was transcribed, for the
-        echo file_message posts once the capture is filed.
+        `heard`: a list that receives (name, transcript, method, text file path) for each audio file that was
+        transcribed, for the echo file_message posts once the capture is filed.
         Raises when the download, the upload or the text-file put fails (file_guarded decides what that means);
         an extraction failure is recorded in the line, never raised (the capture still lands)."""
         dl = self.s.get(a["url"], timeout=120)
@@ -104,7 +113,7 @@ class InboundMixin:
             entry += f", text: [[{text_path}|{name} (text)]]"
             # a failed transcription is not echoed: there is nothing to correct, and the note's line already says so
             if heard is not None and is_audio(mime, name) and not method.startswith("extraction failed"):
-                heard.append((name, att_text or "", method))
+                heard.append((name, att_text or "", method, text_path))
         else:
             entry += ", no text (type not converted)"
         return entry
@@ -118,19 +127,63 @@ class InboundMixin:
         Secret-shaped text is redacted (the message is not the owner's typing, so file_message's refusal did not
         see it), previews are suppressed and there is no mention beyond the reply itself. Best effort: the capture is already
         filed, so a failed post is logged, never raised (a raise would file the message again next tick)."""
-        for i, (name, text, method) in enumerate(heard):
+        for i, (name, text, method, text_path) in enumerate(heard):
             said = SECRET_PATTERNS.sub("[REDACTED]", ECHO_STAMP.sub("", text)).strip()
+            flags = self.translation_flags(method) if said else {}
             if not said:
                 content = f"🎙️ `{name}` ({capture}): no speech recognised ({method})."
             else:
                 cut = len(said) > ECHO_MAX
                 quote = "\n".join("> " + line for line in said[:ECHO_MAX].splitlines())
                 content = (f"🎙️ Heard ({capture}, {method}):\n{quote}" + ("\n… cut here, the whole transcript is filed." if cut else "")
-                           + "\nReply to correct anything misheard.")
+                           + "\nReply to correct anything misheard."
+                           + (f" Tap {' or '.join(flags)} for a translation." if flags else ""))
             try:
-                self.post(channel, content, reply_to=m["id"], key=f"heard-{m['id']}-{i}", suppress_embeds=True)
+                echo_id = self.post(channel, content, reply_to=m["id"], key=f"heard-{m['id']}-{i}", suppress_embeds=True)
             except Exception as exc:  # noqa: BLE001
                 log(f"transcript echo not posted ({exc.__class__.__name__})")
+                continue
+            if flags and echo_id:
+                try:
+                    for emoji in flags:   # the bot's own reaction is the button the owner taps
+                        self.discord("PUT", f"/channels/{channel}/messages/{echo_id}/reactions/{urllib.parse.quote(emoji)}/@me")
+                    buttons.track(echo_id, channel, "translate", {
+                        emoji: {"code": code, "language": TRANSLATE_LANGS[code][1], "note": capture,
+                                "transcript": text_path, "voice_message": m["id"]}
+                        for emoji, code in flags.items()}, TRANSLATE_TTL_S)
+                except Exception as exc:  # noqa: BLE001 - the echo is posted; only the buttons are missing
+                    log(f"translation buttons not added ({exc.__class__.__name__})")
+
+    def translation_flags(self, method):
+        """{flag emoji: language code} to offer under one transcript: the configured languages, minus the one the
+        note is already in when the model was sure of it (an unsure detection keeps every flag)."""
+        found = HEARD_LANGUAGE.search(method or "")
+        own = found.group(1) if found and int(found.group(2)) >= SURE_LANGUAGE else None
+        return {TRANSLATE_LANGS[c][0]: c for c in CFG.translate_to if c in TRANSLATE_LANGS and c != own}
+
+    def translation_requests(self):
+        """Turn each flag tap the reaction check handed over (lib.buttons actions for "translate") into one inbox
+        capture asking for that translation; the routine writes it to notify/, which the relay posts. The capture
+        names the voice note and its transcript file and carries no text of its own. Never raises: a failed write
+        leaves the action for the next tick. Returns the number of captures written."""
+        n = 0
+        for path, a in buttons.actions("translate"):
+            p = a.get("payload") or {}
+            try:
+                now = datetime.now(timezone.utc)
+                note = (f"---\nsource: translate\nlanguage: {p['language']}\nvoice_note: {p['note']}\n"
+                        f"transcript: {p['transcript']}\nmessage_id: \"{p['voice_message']}\"\n"
+                        f"captured: {now:%Y-%m-%dT%H:%MZ}\n---\n\n"
+                        f"{CFG.owner_name} tapped {a.get('emoji', '')} under the transcript of this voice note: "
+                        f"translation into {p['language']} requested. Server-generated.\n")
+                self.put_file(f"inbox/{now:%Y-%m-%dT%H%M%SZ}-translate-{p['voice_message']}-{p['code']}.md",
+                              note.encode(), "inbox: translation request")
+                buttons.done(path)
+                log(f"translation into {p['language']} requested for message {p['voice_message']}")
+                n += 1
+            except Exception as exc:  # noqa: BLE001
+                log(f"translation request not filed ({exc.__class__.__name__}); retried next tick")
+        return n
 
     def link_entry(self, m, url, fid, folder, want_text, stamp, ts, lenient):
         """One `## Links` line for a Google Drive / Docs link ([drive] links, 2026-09-28): the file's name, type,

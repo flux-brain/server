@@ -87,6 +87,10 @@ class DiscordMixin:
                     continue
             break
         r.raise_for_status()
+        try:
+            return r.json().get("id")   # for a caller that puts buttons on the post (the transcript echo)
+        except ValueError:
+            return None
 
     def seen(self, channel, message_id):
         """React 👀 as soon as a message with attachments is picked up (2026-09-17, review P9a): download, Drive upload
