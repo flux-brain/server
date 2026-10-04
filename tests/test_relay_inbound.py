@@ -138,3 +138,68 @@ def test_silent_audio_says_so_and_a_failed_echo_never_blocks_the_filing(make, mo
         raise requests.HTTPError("500")
     r.post = boom
     assert r.inbound("C") == 1 and st["last_message_id"] == "102" and st["message_failures"] == {}
+
+
+# ---------- translation buttons under the echo ([capture] translate_to) ----------
+def with_buttons(make, monkeypatch, text, method, langs):
+    """A relay whose echo post returns an id and whose Discord calls are recorded; clean button state."""
+    import shutil
+    from flux_brain.lib import buttons
+    for d in ("tracked", "actions"):
+        shutil.rmtree(m.CFG.state_dir / d, ignore_errors=True)
+    heard(monkeypatch, text, method)
+    monkeypatch.setattr(m.CFG, "translate_to", langs)
+    r = make({"last_message_id": "101"}, [V], set())
+    inner, r.calls = r.discord, []
+
+    def discord(method, path, **kw):
+        r.calls.append((method, path))
+        return inner(method, path, **kw)
+    r.discord = discord
+    r.post = lambda channel, content, **kw: (r.posts.append((content, kw)), "900")[1]
+    return r, buttons
+
+
+def test_echo_offers_the_other_language_when_the_note_language_is_sure(make, monkeypatch):
+    r, buttons = with_buttons(make, monkeypatch, "[00:00] Bonjour à tous.", "Whisper medium transcript, language fr (97%), 3 s", ["en", "fr"])
+    r.inbound("C")
+    assert "Tap 🇬🇧 for a translation." in r.posts[0][0] and "🇫🇷" not in r.posts[0][0]
+    puts = [p for mth, p in r.calls if mth == "PUT" and "/messages/900/reactions/" in p]
+    assert len(puts) == 1                                         # the bot's own 🇬🇧 is the button
+    (_, entry), = buttons.tracked()
+    assert entry["module"] == "translate" and entry["message"] == "900" and list(entry["actions"]) == ["🇬🇧"]
+    assert entry["actions"]["🇬🇧"] == {"code": "en", "language": "English", "note": "inbox/2026-09-17T1002Z-102.md",
+                                        "transcript": "raw/attachments/2026-09-17T1002Z-102-voice-message.ogg.md", "voice_message": "102"}
+
+
+def test_an_unsure_language_keeps_every_flag_and_no_setting_means_no_buttons(make, monkeypatch):
+    r, buttons = with_buttons(make, monkeypatch, "[00:00] Hello.", "Whisper medium transcript, language fr (65%), 3 s", ["en", "fr", "xx"])
+    r.inbound("C")
+    assert "Tap 🇬🇧 or 🇫🇷 for a translation." in r.posts[0][0]         # "xx" is not a known language: ignored
+    assert list(buttons.tracked()[0][1]["actions"]) == ["🇬🇧", "🇫🇷"]
+    r, buttons = with_buttons(make, monkeypatch, "[00:00] Hello.", METHOD, [])
+    r.inbound("C")
+    assert "translation" not in r.posts[0][0] and buttons.tracked() == []
+    r, buttons = with_buttons(make, monkeypatch, "", METHOD, ["en", "fr"])     # silence: nothing to translate
+    r.inbound("C")
+    assert buttons.tracked() == []
+
+
+def test_a_tap_becomes_a_translate_capture_that_starts_a_run(make, monkeypatch):
+    from flux_brain.lib import captures
+    r, buttons = with_buttons(make, monkeypatch, "[00:00] Bonjour.", "Whisper medium transcript, language fr (97%), 3 s", ["en"])
+    r.inbound("C")
+    (_, entry), = buttons.tracked()
+    buttons.emit("translate", "900", "🇬🇧", entry["actions"]["🇬🇧"])          # what the reaction check does after the grace period
+    r.puts.clear()
+    assert r.translation_requests() == 1 and buttons.actions("translate") == []
+    (path, note), = r.puts
+    assert captures.host_kind(path) == ("translate", "102-en")                 # a server note: the run starts on this tick
+    assert "source: translate" in note and "language: English" in note
+    assert "voice_note: inbox/2026-09-17T1002Z-102.md" in note and "transcript: raw/attachments/" in note and "Bonjour" not in note
+
+    def broken(path, data, msg):
+        raise requests.HTTPError("500")
+    buttons.emit("translate", "900", "🇬🇧", entry["actions"]["🇬🇧"])
+    r.put_file = broken
+    assert r.translation_requests() == 0 and len(buttons.actions("translate")) == 1   # kept for the next tick
