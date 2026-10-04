@@ -44,8 +44,9 @@ IWORK_NOISE = re.compile(r"^(?:[EGyMdhHmsaz ,./:\'-]+|[A-Za-z]+(?:[ -][A-Za-z]+)
                          r"|SF ?UI.*|Helvetica.*|Times.*|.*(?:Stylesheet|Placeholder|Bullet|Theme).*)$")
 IWORK_RUN = re.compile(r"[^\x00-\x08\x0b-\x1f\x7f]{12,}")
 MAX_IWORK_CHARS = 60000
-# The whisper model ("small", 464 MB) is downloaded into CFG.whisper_dir on first use; at most CFG.max_audio_seconds
-# are transcribed (flux.toml capture.audio_minutes). Both read at call time, not at import (2026-09-24).
+# The whisper model (flux.toml capture.whisper_model, default "small", 464 MB) is downloaded into CFG.whisper_dir on
+# first use; at most CFG.max_audio_seconds are transcribed (capture.audio_minutes). All read at call time, not at
+# import (2026-09-24).
 MAX_SHEET_ROWS = 2000
 _WHISPER = None                                # loaded on first audio file only (~2 s, ~1 GB RAM)
 
@@ -93,16 +94,16 @@ def transcribe(path):
     from faster_whisper import WhisperModel  # imported lazily: only audio needs it
     if _WHISPER is None:
         # cpu_threads=3 leaves a core for the rest of the host; int8 keeps RAM near 1 GB
-        _WHISPER = WhisperModel("small", device="cpu", compute_type="int8",
+        _WHISPER = WhisperModel(CFG.whisper_model, device="cpu", compute_type="int8",
                                 download_root=CFG.whisper_dir, cpu_threads=3)
-    segments, info = _WHISPER.transcribe(path, vad_filter=True, beam_size=1)
+    segments, info = _WHISPER.transcribe(path, vad_filter=True, beam_size=CFG.whisper_beam)
     out = []
     for seg in segments:
         if seg.start > CFG.max_audio_seconds:
             out.append(f"[... stopped after {CFG.max_audio_seconds // 60} minutes]")
             break
         out.append(f"[{int(seg.start) // 60:02d}:{int(seg.start) % 60:02d}] {seg.text.strip()}")
-    method = (f"Whisper small transcript, language {info.language} "
+    method = (f"Whisper {CFG.whisper_model} transcript, language {info.language} "
               f"({info.language_probability:.0%}), {info.duration:.0f} s")
     return "\n".join(out), method
 
