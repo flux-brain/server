@@ -79,3 +79,61 @@ def test_message_without_attachments_never_touches_the_counter(make):
     st = {"last_message_id": "100"}
     r = make(st, [B], set())
     assert r.inbound("C") == 1 and st["message_failures"] == {} and st["last_message_id"] == "101"
+
+
+# ---------- transcript echo (a voice note is answered with what was heard) ----------
+V = {"id": "102", "author": {"bot": False}, "type": 0, "content": "", "timestamp": "2026-09-17T10:02:00.000000+00:00",
+     "attachments": [{"filename": "voice-message.ogg", "url": "https://cdn/v.ogg?ex=1", "size": 9000, "content_type": "audio/ogg"}]}
+METHOD = "Whisper small transcript, language en (99%), 7 s"
+
+
+def heard(monkeypatch, text, method=METHOD):
+    monkeypatch.setattr(m.inbound, "extract_text", lambda data, mime, name: (text, method))
+
+
+def test_voice_note_is_answered_with_its_transcript(make, monkeypatch):
+    heard(monkeypatch, "[00:00] Call the notary on Monday.\n[00:04] Budget is 1,200.")
+    r = make({"last_message_id": "101"}, [V], set())
+    assert r.inbound("C") == 1 and len(r.posts) == 1
+    content, kw = r.posts[0]
+    assert kw == {"reply_to": "102", "key": "heard-102-0", "suppress_embeds": True}
+    assert "> Call the notary on Monday.\n> Budget is 1,200." in content and "[00:0" not in content   # stamps dropped
+    assert METHOD in content and "Reply to correct" in content
+    assert [p[0] for p in r.puts][-1] == "inbox/2026-09-17T1002Z-102.md"   # the capture itself is unchanged, filed first
+
+
+def test_echo_redacts_a_spoken_or_embedded_secret_and_cuts_a_long_transcript(make, monkeypatch):
+    heard(monkeypatch, "[00:00] the key is ghp_" + "a" * 36 + "\n" + "word " * 400)
+    r = make({"last_message_id": "101"}, [V], set())
+    r.inbound("C")
+    content = r.posts[0][0]
+    assert "ghp_" not in content and "[REDACTED]" in content
+    assert "cut here" in content and len(content) < 2000
+
+
+def test_no_echo_for_a_document_a_failed_transcription_or_when_switched_off(make, monkeypatch):
+    r = make({"last_message_id": "99"}, [A], set())          # a PDF: text extracted, nothing heard
+    r.inbound("C")
+    assert not r.posts
+    heard(monkeypatch, "", "extraction failed: RuntimeError")
+    r = make({"last_message_id": "101"}, [V], set())
+    assert r.inbound("C") == 1 and not r.posts
+    heard(monkeypatch, "[00:00] hello")
+    monkeypatch.setattr(m.CFG, "echo_transcripts", False)
+    r = make({"last_message_id": "101"}, [V], set())
+    assert r.inbound("C") == 1 and not r.posts
+
+
+def test_silent_audio_says_so_and_a_failed_echo_never_blocks_the_filing(make, monkeypatch):
+    heard(monkeypatch, "")
+    r = make({"last_message_id": "101"}, [V], set())
+    r.inbound("C")
+    assert "no speech recognised" in r.posts[0][0]
+    heard(monkeypatch, "[00:00] hello")
+    st = {"last_message_id": "101"}
+    r = make(st, [V], set())
+
+    def boom(channel, content, **kw):
+        raise requests.HTTPError("500")
+    r.post = boom
+    assert r.inbound("C") == 1 and st["last_message_id"] == "102" and st["message_failures"] == {}

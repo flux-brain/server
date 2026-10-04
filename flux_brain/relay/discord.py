@@ -58,7 +58,7 @@ class DiscordMixin:
         """Channel for a post that needs no human: the log channel when main() found one, else `channel`."""
         return getattr(self, "log_channel", None) or channel
 
-    def post(self, channel, content, reply_to=None, key=None, mention_user=None):
+    def post(self, channel, content, reply_to=None, key=None, mention_user=None, suppress_embeds=False):
         """Create one message. Not through self.s (2026-09-16, code review of the run-link post): that session
         retries POSTs on 5xx, and a 5xx can come back AFTER Discord created the message, so every retry could
         duplicate it. Here a POST is sent once, except after a 429 (Discord did NOT create the message, so a
@@ -68,6 +68,8 @@ class DiscordMixin:
         body = {"content": content[:2000], "allowed_mentions": {"parse": []}}
         if mention_user:  # ping exactly this user and nobody else (never @everyone or roles)
             body["allowed_mentions"]["users"] = [mention_user]
+        if suppress_embeds:  # flags=4: no link preview, for posts that quote outside content (a transcript echo)
+            body["flags"] = 4
         if reply_to:
             body["message_reference"] = {"message_id": reply_to, "fail_if_not_exists": False}
         if key:
