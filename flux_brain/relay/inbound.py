@@ -11,6 +11,7 @@ from ..lib.common import log
 from ..lib.secrets import SECRET_PATTERNS
 from ..lib.extract import extract_text, attachment_text_file, is_audio   # (tests stub extract_text on this module)
 from ..lib.links import drive_links, text_wanted
+from ..lib.translate import TRANSLATE_LANGS, SURE_LANGUAGE, HEARD_LANGUAGE, flags_for  # noqa: F401  (shared with the Gmail module since the voicemail flags)
 from ..lib.linked import details_line, text_file
 from . import state
 
@@ -25,16 +26,12 @@ ECHO_STAMP = re.compile(r"^\[\d{2,}:\d{2}\] ", re.M)   # transcribe()'s per-segm
 # period) then only posts that prepared file. Asking at tap time instead took about seven minutes on the first live
 # use: the request queued behind the note's own run and the quiet period after it. A request capture remains the
 # fallback when no prepared file exists (a vault without the rule, a run that skipped it).
-TRANSLATE_LANGS = {"en": ("🇬🇧", "English"), "fr": ("🇫🇷", "French"), "it": ("🇮🇹", "Italian"), "es": ("🇪🇸", "Spanish"),
-                   "de": ("🇩🇪", "German"), "pt": ("🇵🇹", "Portuguese")}
 TRANSLATE_WAIT_S = 600             # a tap whose prepared translation is not in the vault yet waits this long for the
                                    # note's own run to write it, then falls back to a request capture
 TRANSLATE_MAX = 1800               # characters of a translation posted in the channel
 TRANSLATE_REPOST_S = 24 * 3600     # how long a posted translation is watched for a rewrite (the routine rewrites the
                                    # file when the owner corrects the transcript): the new version is posted again
 TRANSLATE_TTL_S = 24 * 3600        # how long the flags stay live (each tracked post costs one request per flag a minute)
-SURE_LANGUAGE = 80                 # % from which the detected language is trusted: no flag for a note's own language
-HEARD_LANGUAGE = re.compile(r"language (\w+) \((\d+)%\)")   # in transcribe()'s method line
 # Attachments go to cloud storage when the Drive module is on: flux_brain.lib.drive.
 # A capture matching SECRET_PATTERNS is NOT filed: the repo is synced to a phone and a laptop, so a pasted key
 # would spread (the one definition: flux_brain.lib.secrets).
@@ -168,9 +165,7 @@ class InboundMixin:
     def translation_flags(self, method):
         """{flag emoji: language code} to offer under one transcript: the configured languages, minus the one the
         note is already in when the model was sure of it (an unsure detection keeps every flag)."""
-        found = HEARD_LANGUAGE.search(method or "")
-        own = found.group(1) if found and int(found.group(2)) >= SURE_LANGUAGE else None
-        return {TRANSLATE_LANGS[c][0]: c for c in CFG.translate_to if c in TRANSLATE_LANGS and c != own}
+        return flags_for(method)
 
     def translation_requests(self, tree, channel):
         """Act on each flag tap the reaction check handed over (lib.buttons actions for "translate").

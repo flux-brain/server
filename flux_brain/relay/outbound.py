@@ -1,10 +1,13 @@
 """Outbound: new files under briefings/ and notify/ are posted once, split on line boundaries, resumable by part,
 questions with an @mention, run summaries to the log channel; a notify/ file edited after it was posted is posted
 again, marked as updated (run guard, 2026-09-29)."""
+import re
 import urllib.parse
 
 from ..config import CFG
+from ..lib import buttons
 from ..lib.common import log
+from ..lib.translate import TRANSLATE_LANGS, flags_for
 from . import state
 from .state import prune_posted
 
@@ -29,6 +32,9 @@ def is_run_summary(path):
     """The per-run `notify/<stamp>-filed.md` summary the routine writes (vault CLAUDE.md, run protocol): background
     information for the log channel. Everything else in notify/ was written for the owner to read or copy."""
     return path.startswith("notify/") and path.endswith("-filed.md")
+# A voicemail notice (written by the Gmail module): its first line names the capture, its last lines the method.
+VOICEMAIL_NOTICE = re.compile(r"^📞 Voicemail \((inbox/[^)\s]+\.md)\):")
+TRANSLATE_TTL_S = 24 * 3600        # how long the flags under a voicemail notice stay live (same as under an echo)
 MAX_POST_CHUNKS = 5  # outbound files longer than ~9500 chars are cut after this many Discord posts
 
 
@@ -53,6 +59,29 @@ def chunk_lines(text, size):
 
 
 class OutboundMixin:
+    def voicemail_buttons(self, channel, post_id, body):
+        """Translation flags under a voicemail notice, like the ones under a voice note's echo: the Gmail module
+        asked the filing run for the translations (`translations:` in the capture), a tap posts the prepared file as
+        a reply to the notice. Nothing for any other file, for a voicemail where nothing was heard, or without
+        [capture] translate_to. Best effort: the notice is posted either way."""
+        found = VOICEMAIL_NOTICE.match(body or "")
+        if not found or "\n> " not in body:
+            return
+        capture = found.group(1)
+        flags = flags_for(body)
+        if not flags:
+            return
+        try:
+            for emoji in flags:   # the bot's own reaction is the button the owner taps
+                self.discord("PUT", f"/channels/{channel}/messages/{post_id}/reactions/{urllib.parse.quote(emoji)}/@me")
+            buttons.track(post_id, channel, "translate", {
+                emoji: {"code": code, "language": TRANSLATE_LANGS[code][1], "note": capture, "transcript": capture,
+                        "voice_message": str(post_id),
+                        "translation": f"raw/translations/{capture[len('inbox/'):-len('.md')]}-{code}.md"}
+                for emoji, code in flags.items()}, TRANSLATE_TTL_S)
+        except Exception as exc:  # noqa: BLE001
+            log(f"translation buttons not added under a voicemail notice ({exc.__class__.__name__})")
+
     def outbound(self, channel, tree=None):
         # tree passed in by main() since 2026-09-15 (shared with watch_obsidian_notes, one GitHub call per tick)
         tree = tree if tree is not None else self.tree()
@@ -111,13 +140,17 @@ class OutboundMixin:
                 if rec is not None:
                     log(f"{e['path']} changed after a partial post: posting it again from the start")
                 rec = progress[e["path"]] = {"sha": e["sha"], "done": 0}
+            first_id = None
             for i, part in enumerate(parts):
                 if i < rec["done"]:
                     continue
-                self.post(target, part, key=f"{e['path']}@{e['sha'][:10]}#{i}",
-                          mention_user=CFG.owner_discord_id if question and i == 0 else None)
+                post_id = self.post(target, part, key=f"{e['path']}@{e['sha'][:10]}#{i}",
+                                    mention_user=CFG.owner_discord_id if question and i == 0 else None)
+                first_id = post_id if i == 0 else first_id
                 rec["done"] = i + 1
                 state.save_state(self.state)
+            if first_id and not edited:
+                self.voicemail_buttons(target, first_id, body)
             progress.pop(e["path"], None)
             posted.add(e["path"])
             self.state["posted"] = prune_posted(posted, {t["path"] for t in tree})
