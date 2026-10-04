@@ -33,7 +33,7 @@ whisper_model = "small"            # "medium" or "large-v3-turbo" mishear fewer 
 whisper_beam = 1                   # 5 searches wider: a little slower, fewer wrong words
 whisper_prompt = ""                # names you say often, e.g. "Anna, Northwind, the Lisbon flat": spelled right more often
 echo_transcripts = true            # reply to a voice note with what was heard, so a misheard word can be corrected
-translate_to = []                  # e.g. ["en", "fr"]: flag buttons under that reply; a tap asks Claude for a translation
+translate_to = []                  # e.g. ["en", "fr"]: flag buttons under that reply; a tap posts the translation Claude prepared
 
 [paths]
 home = "/var/lib/flux"             # state, tree cache, logs; override with $FLUX_HOME
