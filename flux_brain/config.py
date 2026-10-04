@@ -82,6 +82,9 @@ class Config:
         # fewer words but take two to four times longer per note on CPU and more RAM (lib/extract.py transcribe)
         self.whisper_model = str(g("capture", "whisper_model", "small"))
         self.whisper_beam = int(g("capture", "whisper_beam", 1))
+        # names and terms the owner uses (people, projects, places), given to the model as context so it spells
+        # them right instead of guessing; a short comma-separated line, it stays in flux.toml and never in the vault
+        self.whisper_prompt = str(g("capture", "whisper_prompt", "")).strip()
         # a transcribed voice note is answered with its transcript in the conversation channel, so the owner sees
         # a misheard name or figure and corrects it with a reply, which the routine applies to what it filed
         # (relay/inbound.py echo_transcripts)
