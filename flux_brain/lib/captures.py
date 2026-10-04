@@ -24,6 +24,7 @@ KINDS = {
     "signal": ("Signal forward, {rest}", False),       # <account>-<last message id>, same kind of companion filer (Note to Self)
     "gmessages": ("Google Messages forward, {rest}", False),   # <account>-<last message id>, same kind of filer (SMS / RCS to self)
     "drive": ("Drive file {rest}", True),
+    "translate": ("translation request, voice note {rest}", False),   # <message id>-<language code>, written by the relay (flag button)
     "triage": ("reply-draft request, Gmail thread {rest}", False),   # <thread id>, written by flux_brain.triage (✍️)              # <file id>, written by the Drive watch module (flux_brain.drivewatch)
 }
 _TAGS = "|".join(sorted(KINDS, key=len, reverse=True))   # longest first, so keep-note is not read as keep + "note-..."
