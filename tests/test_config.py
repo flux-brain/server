@@ -14,6 +14,7 @@ from conftest import ROOT
 TASKS = "inbox/2026-09-22T163859Z-tasks-garden.md"
 WA = "inbox/2026-09-22T180000Z-whatsapp-acct-abc123.md"
 TG = "inbox/2026-10-04T180000Z-telegram-acct-4521.md"
+SG = "inbox/2026-10-04T180000Z-signal-acct-1700000000000.md"
 KEEPN = "inbox/2026-09-17T122915Z-keep-note-abc123.md"
 
 
@@ -61,6 +62,8 @@ def test_descriptions():
     assert "WhatsApp" in relay.describe_inbox(WA)
     assert "Telegram forward, acct-4521" in relay.describe_inbox(TG)   # a server-written note, not a typed one
     assert captures.host_kind(TG) == ("telegram", "acct-4521") and not captures.carries_page("telegram")
+    assert "Signal forward, acct-1700000000000" in relay.describe_inbox(SG)
+    assert captures.host_kind(SG) == ("signal", "acct-1700000000000") and not captures.carries_page("signal")
 
 
 def test_page_hint_eligibility():
