@@ -20,6 +20,7 @@ KINDS = {
     "memory-reconcile": ("memory reconcile, project {rest}", True),
     "tasks": ("Tasks checklist edit, project {rest}", True),
     "whatsapp": ("WhatsApp forward, {rest}", False),   # <account>-<last message id>, written by a private companion filer
+    "telegram": ("Telegram forward, {rest}", False),   # <account>-<last message id>, same kind of companion filer (Saved Messages)
     "drive": ("Drive file {rest}", True),
     "triage": ("reply-draft request, Gmail thread {rest}", False),   # <thread id>, written by flux_brain.triage (✍️)              # <file id>, written by the Drive watch module (flux_brain.drivewatch)
 }
