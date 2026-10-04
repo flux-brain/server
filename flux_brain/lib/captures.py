@@ -22,6 +22,7 @@ KINDS = {
     "whatsapp": ("WhatsApp forward, {rest}", False),   # <account>-<last message id>, written by a private companion filer
     "telegram": ("Telegram forward, {rest}", False),   # <account>-<last message id>, same kind of companion filer (Saved Messages)
     "signal": ("Signal forward, {rest}", False),       # <account>-<last message id>, same kind of companion filer (Note to Self)
+    "gmessages": ("Google Messages forward, {rest}", False),   # <account>-<last message id>, same kind of filer (SMS / RCS to self)
     "drive": ("Drive file {rest}", True),
     "triage": ("reply-draft request, Gmail thread {rest}", False),   # <thread id>, written by flux_brain.triage (✍️)              # <file id>, written by the Drive watch module (flux_brain.drivewatch)
 }
