@@ -21,6 +21,8 @@ min_interval_s = 180               # wait for a run marker before another start
 marker_fresh_s = 1200              # a .run/active older than this is a crashed run's leftover; keep it equal to the
                                    # "20 minutes" of the vault's CLAUDE.md (Run protocol step 3) and of both routine prompts
 post_run_quiet_s = 120             # no new start this long after a run ends (a late commit restarts the wait)
+reconcile_coalesce_s = 300         # a start made only of memory reconcile notes waits this long after the latest one,
+reconcile_max_s = 900              # and at most this long after the first; lower both for faster pages, more runs
 author = "Claude"                  # git author name of the routines' commits (the relay audits them)
 
 [capture]

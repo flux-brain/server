@@ -252,6 +252,18 @@ def test_server_note_does_not_wait_for_typed_note_reconcile_timer(h):
     assert st["reconcile_hold_until"] == 1000 + m.RECONCILE_MAX   # capped at 15 min after the first
 
 
+def test_reconcile_hold_follows_the_configured_values(h, monkeypatch):
+    # flux.toml [routine] reconcile_coalesce_s / reconcile_max_s replace the package defaults
+    monkeypatch.setattr(m.CFG, "reconcile_coalesce", 60)
+    monkeypatch.setattr(m.CFG, "reconcile_max", 240)
+    st = {"obsidian_notes": {}}
+    r = h.relay(st)
+    r.watch_obsidian_notes([blob(RECON)], now=1000)
+    assert st["reconcile_hold_until"] == 1000 + 60
+    r.watch_obsidian_notes([blob(RECON, "d" * 40)], now=1000 + 200)
+    assert st["reconcile_hold_until"] == 1000 + 240   # capped after the first note, not 200 + 60
+
+
 @pytest.mark.parametrize("hh,mm", [(14, 58), (15, 2)])
 def test_no_clock_windows_any_more(h, monkeypatch, hh, mm):
     class DTW(dt.datetime):
