@@ -1,6 +1,7 @@
 """Inbound: new human messages in the conversation channel become inbox/ captures (attachments through Drive and the
 text extractors), with a per-message failure count so one bad message never blocks the queue for good."""
 import re
+import time
 import urllib.parse
 from datetime import datetime, timezone
 
@@ -18,10 +19,17 @@ MESSAGE_GIVE_UP = 3                # (2026-09-17 code review fix 2) strict filin
 ECHO_MAX = 1500                    # characters of a transcript quoted back in the channel (a Discord message holds
                                    # 2000); a longer one is cut there, the whole text is in the vault either way
 ECHO_STAMP = re.compile(r"^\[\d{2,}:\d{2}\] ", re.M)   # transcribe()'s per-segment [mm:ss] prefix, noise in a chat reply
-# Translation buttons ([capture] translate_to): flags under a transcript echo. A tap (after the usual grace period)
-# files a `translate` capture and the routine posts the translation; the server has no language model of its own.
+# Translation buttons ([capture] translate_to): flags under a transcript echo. The server has no language model of its
+# own, so the routine translates, and it does so UP FRONT: the capture's `translations: [codes]` line asks the run
+# that files the voice note to write `raw/translations/<capture name>-<code>.md` as well. A tap (after the usual grace
+# period) then only posts that prepared file. Asking at tap time instead took about seven minutes on the first live
+# use: the request queued behind the note's own run and the quiet period after it. A request capture remains the
+# fallback when no prepared file exists (a vault without the rule, a run that skipped it).
 TRANSLATE_LANGS = {"en": ("🇬🇧", "English"), "fr": ("🇫🇷", "French"), "it": ("🇮🇹", "Italian"), "es": ("🇪🇸", "Spanish"),
                    "de": ("🇩🇪", "German"), "pt": ("🇵🇹", "Portuguese")}
+TRANSLATE_WAIT_S = 600             # a tap whose prepared translation is not in the vault yet waits this long for the
+                                   # note's own run to write it, then falls back to a request capture
+TRANSLATE_MAX = 1800               # characters of a translation posted in the channel
 TRANSLATE_TTL_S = 24 * 3600        # how long the flags stay live (each tracked post costs one request per flag a minute)
 SURE_LANGUAGE = 80                 # % from which the detected language is trusted: no flag for a note's own language
 HEARD_LANGUAGE = re.compile(r"language (\w+) \((\d+)%\)")   # in transcribe()'s method line
@@ -149,7 +157,8 @@ class InboundMixin:
                         self.discord("PUT", f"/channels/{channel}/messages/{echo_id}/reactions/{urllib.parse.quote(emoji)}/@me")
                     buttons.track(echo_id, channel, "translate", {
                         emoji: {"code": code, "language": TRANSLATE_LANGS[code][1], "note": capture,
-                                "transcript": text_path, "voice_message": m["id"]}
+                                "transcript": text_path, "voice_message": m["id"],
+                                "translation": f"raw/translations/{capture[len('inbox/'):-len('.md')]}-{code}.md"}
                         for emoji, code in flags.items()}, TRANSLATE_TTL_S)
                 except Exception as exc:  # noqa: BLE001 - the echo is posted; only the buttons are missing
                     log(f"translation buttons not added ({exc.__class__.__name__})")
@@ -161,15 +170,34 @@ class InboundMixin:
         own = found.group(1) if found and int(found.group(2)) >= SURE_LANGUAGE else None
         return {TRANSLATE_LANGS[c][0]: c for c in CFG.translate_to if c in TRANSLATE_LANGS and c != own}
 
-    def translation_requests(self):
-        """Turn each flag tap the reaction check handed over (lib.buttons actions for "translate") into one inbox
-        capture asking for that translation; the routine writes it to notify/, which the relay posts. The capture
-        names the voice note and its transcript file and carries no text of its own. Never raises: a failed write
-        leaves the action for the next tick. Returns the number of captures written."""
+    def translation_requests(self, tree, channel):
+        """Act on each flag tap the reaction check handed over (lib.buttons actions for "translate").
+        The prepared translation is in the vault (`translation` path in `tree`): post it as a reply to the voice
+        note, secrets redacted, previews off, and the tap is done. Not there yet: wait while the note's own run may
+        still be writing it (the capture is still in inbox/, or the tap is younger than TRANSLATE_WAIT_S and the note
+        was not filed without one); otherwise file ONE `translate` request capture, which the routine answers in
+        notify/. Never raises: a failed step leaves the action for the next tick. Returns the number acted on."""
         n = 0
+        paths = {e["path"]: e for e in tree}
         for path, a in buttons.actions("translate"):
             p = a.get("payload") or {}
             try:
+                ready = paths.get(p.get("translation") or "")
+                if ready:
+                    text = SECRET_PATTERNS.sub("[REDACTED]", self.blob_text(ready["sha"])).strip()
+                    cut = len(text) > TRANSLATE_MAX
+                    quote = "\n".join("> " + line for line in text[:TRANSLATE_MAX].splitlines())
+                    self.post(channel, f"{a.get('emoji', '')} {p['language']}:\n{quote}"
+                              + (f"\n… cut here, the whole translation is in {p['translation']}." if cut else ""),
+                              reply_to=p["voice_message"], key=f"translation-{p['voice_message']}-{p['code']}",
+                              suppress_embeds=True)
+                    buttons.done(path)
+                    log(f"translation into {p['language']} posted for message {p['voice_message']}")
+                    n += 1
+                    continue
+                unfiled = p.get("note") in paths                  # the note's own run has not filed it yet
+                if unfiled and time.time() - a.get("at", 0) < TRANSLATE_WAIT_S:
+                    continue                                       # the prepared file is probably on its way
                 now = datetime.now(timezone.utc)
                 note = (f"---\nsource: translate\nlanguage: {p['language']}\nvoice_note: {p['note']}\n"
                         f"transcript: {p['transcript']}\nmessage_id: \"{p['voice_message']}\"\n"
@@ -179,10 +207,10 @@ class InboundMixin:
                 self.put_file(f"inbox/{now:%Y-%m-%dT%H%M%SZ}-translate-{p['voice_message']}-{p['code']}.md",
                               note.encode(), "inbox: translation request")
                 buttons.done(path)
-                log(f"translation into {p['language']} requested for message {p['voice_message']}")
+                log(f"translation into {p['language']} requested for message {p['voice_message']} (none prepared)")
                 n += 1
             except Exception as exc:  # noqa: BLE001
-                log(f"translation request not filed ({exc.__class__.__name__}); retried next tick")
+                log(f"translation tap not handled ({exc.__class__.__name__}); retried next tick")
         return n
 
     def link_entry(self, m, url, fid, folder, want_text, stamp, ts, lenient):
@@ -254,6 +282,11 @@ class InboundMixin:
         refs = ""
         if m.get("referenced_message"):  # a reply, e.g. answering a question Claude posted
             refs = "\nin_reply_to: |\n  " + m["referenced_message"].get("content", "")[:300].replace("\n", "\n  ")
+        # voice note: the languages the echo will offer, so the run that files it prepares those translations
+        codes = sorted({c for _n, said, method, _p in heard if said.strip()
+                        for c in self.translation_flags(method).values()}) if CFG.echo_transcripts else []
+        if codes:
+            refs += f"\ntranslations: [{', '.join(codes)}]"
         note = (f"---\nsource: discord\nmessage_id: \"{m['id']}\"\ncaptured: {ts:%Y-%m-%dT%H:%MZ}{refs}\n---\n\n"
                 f"{text}\n" + ("\n## Attachments\n" + "\n".join(lines) + "\n" if lines else "")
                 + ("\n## Links\n" + "\n".join(link_lines) + "\n" if link_lines else ""))

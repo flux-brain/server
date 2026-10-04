@@ -96,8 +96,8 @@ def main():
             return 0
         relay.log_channel = relay.find_log_channel()  # None until the log channel exists: then log_target() = channel
         filed = relay.inbound(channel)
-        relay.translation_requests()  # flag taps under transcript echoes -> `translate` captures; never raises
         tree = relay.tree()  # after inbound, so this tick's Discord notes are in it (and excluded by RELAY_NOTE)
+        relay.translation_requests(tree, channel)  # flag taps under transcript echoes: post the prepared translation; never raises
         relay.audit_commits(tree, channel)  # run guard: late routine commits hold the next start; never raises
         relay.watch_obsidian_notes(tree, channel=channel)  # may set fire_pending (typed notes after settling, server notes now)
         relay.trigger_apply(tree)  # new memory proposals start the applier now instead of at its next cron tick

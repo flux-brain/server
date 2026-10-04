@@ -169,7 +169,10 @@ def test_echo_offers_the_other_language_when_the_note_language_is_sure(make, mon
     (_, entry), = buttons.tracked()
     assert entry["module"] == "translate" and entry["message"] == "900" and list(entry["actions"]) == ["🇬🇧"]
     assert entry["actions"]["🇬🇧"] == {"code": "en", "language": "English", "note": "inbox/2026-09-17T1002Z-102.md",
-                                        "transcript": "raw/attachments/2026-09-17T1002Z-102-voice-message.ogg.md", "voice_message": "102"}
+                                        "transcript": "raw/attachments/2026-09-17T1002Z-102-voice-message.ogg.md", "voice_message": "102",
+                                        "translation": "raw/translations/2026-09-17T1002Z-102-en.md"}
+    note = next(v for k, v in r.puts if k.startswith("inbox/"))
+    assert "\ntranslations: [en]\n" in note.split("---")[1]            # asks the filing run to prepare that translation
 
 
 def test_an_unsure_language_keeps_every_flag_and_no_setting_means_no_buttons(make, monkeypatch):
@@ -185,21 +188,41 @@ def test_an_unsure_language_keeps_every_flag_and_no_setting_means_no_buttons(mak
     assert buttons.tracked() == []
 
 
-def test_a_tap_becomes_a_translate_capture_that_starts_a_run(make, monkeypatch):
-    from flux_brain.lib import captures
+def test_a_tap_posts_the_prepared_translation(make, monkeypatch):
     r, buttons = with_buttons(make, monkeypatch, "[00:00] Bonjour.", "Whisper medium transcript, language fr (97%), 3 s", ["en"])
     r.inbound("C")
     (_, entry), = buttons.tracked()
     buttons.emit("translate", "900", "🇬🇧", entry["actions"]["🇬🇧"])          # what the reaction check does after the grace period
-    r.puts.clear()
-    assert r.translation_requests() == 1 and buttons.actions("translate") == []
+    r.puts.clear(), r.posts.clear()
+    r.blob_text = lambda sha: "Hello. The key is ghp_" + "a" * 36
+    tree = [{"path": "raw/translations/2026-09-17T1002Z-102-en.md", "sha": "s1"}, {"path": "raw/captures/2026/09/2026-09-17T1002Z-102.md", "sha": "s2"}]
+    assert r.translation_requests(tree, "C") == 1 and buttons.actions("translate") == [] and not r.puts
+    content, kw = r.posts[0]
+    assert content.startswith("🇬🇧 English:\n> Hello.") and "ghp_" not in content and "[REDACTED]" in content
+    assert kw == {"reply_to": "102", "key": "translation-102-en", "suppress_embeds": True}
+
+
+def test_a_tap_waits_for_the_notes_own_run_then_falls_back_to_a_request(make, monkeypatch):
+    from flux_brain.lib import captures
+    r, buttons = with_buttons(make, monkeypatch, "[00:00] Bonjour.", "Whisper medium transcript, language fr (97%), 3 s", ["en"])
+    r.inbound("C")
+    (_, entry), = buttons.tracked()
+    buttons.emit("translate", "900", "🇬🇧", entry["actions"]["🇬🇧"])
+    r.puts.clear(), r.posts.clear()
+    in_inbox = [{"path": "inbox/2026-09-17T1002Z-102.md", "sha": "s"}]
+    assert r.translation_requests(in_inbox, "C") == 0 and not r.puts and len(buttons.actions("translate")) == 1   # run not done: wait
+    monkeypatch.setattr(m.inbound, "TRANSLATE_WAIT_S", 0)                      # ... but not for ever
+    assert r.translation_requests(in_inbox, "C") == 1
     (path, note), = r.puts
-    assert captures.host_kind(path) == ("translate", "102-en")                 # a server note: the run starts on this tick
-    assert "source: translate" in note and "language: English" in note
-    assert "voice_note: inbox/2026-09-17T1002Z-102.md" in note and "transcript: raw/attachments/" in note and "Bonjour" not in note
+    assert captures.host_kind(path) == ("translate", "102-en")                 # a server note: starts a run
+    assert "source: translate" in note and "language: English" in note and "Bonjour" not in note
+    monkeypatch.setattr(m.inbound, "TRANSLATE_WAIT_S", 600)
+    buttons.emit("translate", "900", "🇬🇧", entry["actions"]["🇬🇧"])
+    r.puts.clear()
+    assert r.translation_requests([], "C") == 1 and len(r.puts) == 1           # filed without a translation: ask at once
 
     def broken(path, data, msg):
         raise requests.HTTPError("500")
     buttons.emit("translate", "900", "🇬🇧", entry["actions"]["🇬🇧"])
     r.put_file = broken
-    assert r.translation_requests() == 0 and len(buttons.actions("translate")) == 1   # kept for the next tick
+    assert r.translation_requests([], "C") == 0 and len(buttons.actions("translate")) == 1   # kept for the next tick
