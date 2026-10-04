@@ -109,21 +109,23 @@ class InboundMixin:
             entry += ", no text (type not converted)"
         return entry
 
-    def echo_transcripts(self, channel, m, heard):
+    def echo_transcripts(self, channel, m, heard, capture):
         """Reply to a voice note with what was heard ([capture] echo_transcripts). The transcript otherwise goes
         straight to the vault and the routine, so a misheard name, amount or date would be filed unseen; quoted
         back here, the owner corrects it with a one-line reply (filed as a capture with in_reply_to, like any
-        reply). Secret-shaped text is redacted (the message is not the owner's typing, so file_message's refusal
-        did not see it), previews are suppressed and nobody is mentioned. Best effort: the capture is already
+        reply). The first line names `capture`, the voice note's inbox file: in_reply_to keeps only the start of
+        the replied-to message, and that path is what ties a correction to its note however long the transcript.
+        Secret-shaped text is redacted (the message is not the owner's typing, so file_message's refusal did not
+        see it), previews are suppressed and there is no mention beyond the reply itself. Best effort: the capture is already
         filed, so a failed post is logged, never raised (a raise would file the message again next tick)."""
         for i, (name, text, method) in enumerate(heard):
             said = SECRET_PATTERNS.sub("[REDACTED]", ECHO_STAMP.sub("", text)).strip()
             if not said:
-                content = f"🎙️ `{name}`: no speech recognised ({method})."
+                content = f"🎙️ `{name}` ({capture}): no speech recognised ({method})."
             else:
                 cut = len(said) > ECHO_MAX
                 quote = "\n".join("> " + line for line in said[:ECHO_MAX].splitlines())
-                content = (f"🎙️ Heard ({method}):\n{quote}" + ("\n… cut here, the whole transcript is filed." if cut else "")
+                content = (f"🎙️ Heard ({capture}, {method}):\n{quote}" + ("\n… cut here, the whole transcript is filed." if cut else "")
                            + "\nReply to correct anything misheard.")
             try:
                 self.post(channel, content, reply_to=m["id"], key=f"heard-{m['id']}-{i}", suppress_embeds=True)
@@ -207,7 +209,7 @@ class InboundMixin:
         if m.get("attachments") or link_lines:
             self.unseen(channel, m["id"])
         if heard and CFG.echo_transcripts:
-            self.echo_transcripts(channel, m, heard)   # after the ✅: the capture is safe before anything optional
+            self.echo_transcripts(channel, m, heard, f"inbox/{stamp}-{m['id']}.md")   # after the ✅: the capture is safe before anything optional
         if not_fetched:
             # Best effort, like the 👀 reaction: the capture is filed either way, and this reply is the only place
             # the owner learns that a file did not make it (the note is read by the routine, not by him).

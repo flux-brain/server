@@ -99,6 +99,7 @@ def test_voice_note_is_answered_with_its_transcript(make, monkeypatch):
     assert kw == {"reply_to": "102", "key": "heard-102-0", "suppress_embeds": True}
     assert "> Call the notary on Monday.\n> Budget is 1,200." in content and "[00:0" not in content   # stamps dropped
     assert METHOD in content and "Reply to correct" in content
+    assert content.startswith("🎙️ Heard (inbox/2026-09-17T1002Z-102.md, ")   # in_reply_to keeps the start: the note's path
     assert [p[0] for p in r.puts][-1] == "inbox/2026-09-17T1002Z-102.md"   # the capture itself is unchanged, filed first
 
 

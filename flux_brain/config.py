@@ -78,8 +78,9 @@ class Config:
         self.phone_settle = int(g("capture", "settle_s", 60))
         self.max_attachment_mb = int(g("capture", "max_attachment_mb", 20))
         self.audio_minutes = int(g("capture", "audio_minutes", 30))
-        # a transcribed voice note is answered with its transcript in the conversation channel, so the owner can
-        # correct a misheard name or figure before the routine files it (relay/inbound.py echo_transcripts)
+        # a transcribed voice note is answered with its transcript in the conversation channel, so the owner sees
+        # a misheard name or figure and corrects it with a reply, which the routine applies to what it filed
+        # (relay/inbound.py echo_transcripts)
         self.echo_transcripts = bool(g("capture", "echo_transcripts", True))
         # paths
         self.state_dir = self.home / "state"
