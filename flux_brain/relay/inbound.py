@@ -30,6 +30,8 @@ TRANSLATE_LANGS = {"en": ("🇬🇧", "English"), "fr": ("🇫🇷", "French"), 
 TRANSLATE_WAIT_S = 600             # a tap whose prepared translation is not in the vault yet waits this long for the
                                    # note's own run to write it, then falls back to a request capture
 TRANSLATE_MAX = 1800               # characters of a translation posted in the channel
+TRANSLATE_REPOST_S = 24 * 3600     # how long a posted translation is watched for a rewrite (the routine rewrites the
+                                   # file when the owner corrects the transcript): the new version is posted again
 TRANSLATE_TTL_S = 24 * 3600        # how long the flags stay live (each tracked post costs one request per flag a minute)
 SURE_LANGUAGE = 80                 # % from which the detected language is trusted: no flag for a note's own language
 HEARD_LANGUAGE = re.compile(r"language (\w+) \((\d+)%\)")   # in transcribe()'s method line
@@ -179,6 +181,7 @@ class InboundMixin:
         notify/. Never raises: a failed step leaves the action for the next tick. Returns the number acted on."""
         n = 0
         paths = {e["path"]: e for e in tree}
+        self.repost_translations(paths, channel)
         for path, a in buttons.actions("translate"):
             p = a.get("payload") or {}
             try:
@@ -192,6 +195,11 @@ class InboundMixin:
                               reply_to=p["voice_message"], key=f"translation-{p['voice_message']}-{p['code']}",
                               suppress_embeds=True)
                     buttons.done(path)
+                    # remember the version posted: a later rewrite of the file (a correction) is posted again
+                    self.state.setdefault("translations_posted", {})[p["translation"]] = {
+                        "sha": ready["sha"], "voice_message": p["voice_message"], "language": p["language"],
+                        "emoji": a.get("emoji", ""), "at": time.time()}
+                    state.save_state(self.state)
                     log(f"translation into {p['language']} posted for message {p['voice_message']}")
                     n += 1
                     continue
@@ -212,6 +220,37 @@ class InboundMixin:
             except Exception as exc:  # noqa: BLE001
                 log(f"translation tap not handled ({exc.__class__.__name__}); retried next tick")
         return n
+
+    def repost_translations(self, paths, channel):
+        """Post again a translation that changed since it was posted (state `translations_posted`): the owner corrected
+        the transcript after tapping the flag, the routine rewrote the file, and without this the corrected text
+        would stay in the vault unseen. Watched for TRANSLATE_REPOST_S, then forgotten; a file that is gone is
+        forgotten too. Never raises: a failed post is tried again next tick."""
+        sent = self.state.get("translations_posted") or {}
+        changed = False
+        for path, rec in list(sent.items()):
+            e = paths.get(path)
+            if e is None or time.time() - rec.get("at", 0) > TRANSLATE_REPOST_S:
+                sent.pop(path)
+                changed = True
+                continue
+            if e["sha"] == rec["sha"]:
+                continue
+            try:
+                text = SECRET_PATTERNS.sub("[REDACTED]", self.blob_text(e["sha"])).strip()
+                cut = len(text) > TRANSLATE_MAX
+                quote = "\n".join("> " + line for line in text[:TRANSLATE_MAX].splitlines())
+                self.post(channel, f"✏️ {rec.get('emoji', '')} {rec['language']}, corrected:\n{quote}"
+                          + (f"\n… cut here, the whole translation is in {path}." if cut else ""),
+                          reply_to=rec["voice_message"], key=f"translation-{rec['voice_message']}-{e['sha'][:12]}",
+                          suppress_embeds=True)
+                rec["sha"] = e["sha"]
+                changed = True
+                log(f"corrected translation into {rec['language']} posted for message {rec['voice_message']}")
+            except Exception as exc:  # noqa: BLE001
+                log(f"corrected translation not posted ({exc.__class__.__name__}); retried next tick")
+        if changed:
+            state.save_state(self.state)
 
     def link_entry(self, m, url, fid, folder, want_text, stamp, ts, lenient):
         """One `## Links` line for a Google Drive / Docs link ([drive] links, 2026-09-28): the file's name, type,
