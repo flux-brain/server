@@ -617,3 +617,46 @@ def test_vanished_base_restarts_from_the_tip(h):
     r.ghc = Gone([])
     r.audit_commits([blob(DISC)], "C")
     assert st["audit"] == {"tip": "t2", "marker": False} and h.calls == []
+
+
+# ---------- translation flags under a voicemail notice (the Gmail module's notify/ file) ----------
+VM_NOTICE = ("📞 Voicemail (inbox/2026-01-01T1000Z-gmail-v1.md):\nNew message: From : 0100000001 Length : 6 seconds\n"
+             "> [00:01] Bonjour, c'est Anna.\n(Whisper medium transcript, language fr (96%), 6 s)\n"
+             "Reply to correct anything misheard. Tap 🇬🇧 for a translation.\n")
+
+
+def _notice_relay(h, monkeypatch, body, langs=("en", "fr")):
+    import shutil
+    from flux_brain.lib import buttons
+    for d in ("tracked", "actions"):
+        shutil.rmtree(m.CFG.state_dir / d, ignore_errors=True)
+    monkeypatch.setattr(m.CFG, "translate_to", list(langs))
+    r = h.relay({"posted": [], "posted_sha": {}})
+    r.blob_text = lambda sha: body
+    r.calls, r.posts = [], []
+    r.discord = lambda method, path, **kw: r.calls.append((method, path))
+    r.post = lambda channel, content, **kw: (r.posts.append(content), "900")[1]
+    return r, buttons
+
+
+def test_voicemail_notice_gets_translation_flags(h, monkeypatch):
+    r, buttons = _notice_relay(h, monkeypatch, VM_NOTICE)
+    r.outbound("C", [blob("notify/2026-01-01T1000Z-voicemail-v1.md")])
+    assert len(r.posts) == 1 and "📞 Voicemail (inbox/2026-01-01T1000Z-gmail-v1.md)" in r.posts[0]
+    assert [p for mth, p in r.calls if mth == "PUT" and "/messages/900/reactions/" in p]      # the bot's own flag
+    (_, entry), = buttons.tracked()
+    assert entry["module"] == "translate" and entry["message"] == "900" and list(entry["actions"]) == ["🇬🇧"]
+    assert entry["actions"]["🇬🇧"] == {"code": "en", "language": "English", "note": "inbox/2026-01-01T1000Z-gmail-v1.md",
+                                        "transcript": "inbox/2026-01-01T1000Z-gmail-v1.md", "voice_message": "900",
+                                        "translation": "raw/translations/2026-01-01T1000Z-gmail-v1-en.md"}
+
+
+def test_other_notify_files_and_silent_voicemails_get_no_flags(h, monkeypatch):
+    r, buttons = _notice_relay(h, monkeypatch, "A draft the owner asked for.\n> quoted line\n")
+    r.outbound("C", [blob("notify/2026-01-01T100000-draft.md")])
+    silent = "📞 Voicemail (inbox/2026-01-01T1000Z-gmail-v2.md):\nNothing could be heard (Whisper medium transcript, language en (51%), 1 s).\n"
+    r2, _ = _notice_relay(h, monkeypatch, silent)
+    r2.outbound("C", [blob("notify/2026-01-01T1000Z-voicemail-v2.md")])
+    r3, _ = _notice_relay(h, monkeypatch, VM_NOTICE, langs=())
+    r3.outbound("C", [blob("notify/2026-01-01T1000Z-voicemail-v1.md")])
+    assert buttons.tracked() == [] and not r.calls and not r2.calls and not r3.calls

@@ -476,3 +476,26 @@ def test_contacts_are_optional_and_a_failure_never_stops_the_filing(monkeypatch)
     monkeypatch.setattr(gr.CFG, "gmail_voicemail_contacts_token_file", "/nonexistent/token.json")
     monkeypatch.setattr(gr, "GoogleToken", lambda *a: (_ for _ in ()).throw(RuntimeError("token refresh failed")))
     assert r.run() == 1 and any(p.startswith("notify/") for p, _ in puts)
+
+
+# ---------- a voicemail can be corrected and translated like a voice note ----------
+def test_voicemail_capture_asks_for_translations_and_the_notice_offers_them(monkeypatch):
+    r, puts, calls = _voicemail_relay(monkeypatch)
+    monkeypatch.setattr(gr.CFG, "translate_to", ["en", "fr"])
+    monkeypatch.setattr(gr, "extract_with_retry", lambda blob, mime, name: ("[00:01] Bonjour, c'est Anna.", "Whisper medium transcript, language fr (96%), 6 s"))
+    assert r.run() == 1
+    capture = next(d for p, d in puts if p.startswith("inbox/"))
+    assert "\ntranslations: [en]\n" in capture.split("---")[1]            # French heard with confidence: English only
+    notice = next(d for p, d in puts if p.startswith("notify/"))
+    assert "Reply to correct anything misheard. Tap 🇬🇧 for a translation." in notice and "🇫🇷" not in notice
+
+
+def test_voicemail_without_translate_to_or_without_speech_asks_for_no_translation(monkeypatch):
+    r, puts, calls = _voicemail_relay(monkeypatch)
+    assert r.run() == 1
+    assert "translations:" not in next(d for p, d in puts if p.startswith("inbox/"))
+    notice = next(d for p, d in puts if p.startswith("notify/"))
+    assert "Reply to correct anything misheard." in notice and "Tap" not in notice
+    r2, puts2, _ = _voicemail_relay(monkeypatch, heard_text="")
+    monkeypatch.setattr(gr.CFG, "translate_to", ["en", "fr"])
+    assert r2.run() == 1 and "translations:" not in next(d for p, d in puts2 if p.startswith("inbox/"))
