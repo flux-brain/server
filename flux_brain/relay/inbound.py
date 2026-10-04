@@ -185,7 +185,8 @@ class InboundMixin:
                     text = SECRET_PATTERNS.sub("[REDACTED]", self.blob_text(ready["sha"])).strip()
                     cut = len(text) > TRANSLATE_MAX
                     quote = "\n".join("> " + line for line in text[:TRANSLATE_MAX].splitlines())
-                    self.post(channel, f"{a.get('emoji', '')} {p['language']}:\n{quote}"
+                    # in the channel the flag was tapped in: a companion program may post its transcripts elsewhere
+                    self.post(p.get("channel") or channel, f"{a.get('emoji', '')} {p['language']}:\n{quote}"
                               + (f"\n… cut here, the whole translation is in {p['translation']}." if cut else ""),
                               reply_to=p["voice_message"], key=f"translation-{p['voice_message']}-{p['code']}",
                               suppress_embeds=True)
@@ -193,6 +194,7 @@ class InboundMixin:
                     # remember the version posted: a later rewrite of the file (a correction) is posted again
                     self.state.setdefault("translations_posted", {})[p["translation"]] = {
                         "sha": ready["sha"], "voice_message": p["voice_message"], "language": p["language"],
+                        "channel": p.get("channel") or channel,
                         "emoji": a.get("emoji", ""), "at": time.time()}
                     state.save_state(self.state)
                     log(f"translation into {p['language']} posted for message {p['voice_message']}")
@@ -235,7 +237,7 @@ class InboundMixin:
                 text = SECRET_PATTERNS.sub("[REDACTED]", self.blob_text(e["sha"])).strip()
                 cut = len(text) > TRANSLATE_MAX
                 quote = "\n".join("> " + line for line in text[:TRANSLATE_MAX].splitlines())
-                self.post(channel, f"✏️ {rec.get('emoji', '')} {rec['language']}, corrected:\n{quote}"
+                self.post(rec.get("channel") or channel, f"✏️ {rec.get('emoji', '')} {rec['language']}, corrected:\n{quote}"
                           + (f"\n… cut here, the whole translation is in {path}." if cut else ""),
                           reply_to=rec["voice_message"], key=f"translation-{rec['voice_message']}-{e['sha'][:12]}",
                           suppress_embeds=True)

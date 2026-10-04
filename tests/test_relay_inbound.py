@@ -240,3 +240,20 @@ def test_a_tap_waits_for_the_notes_own_run_then_falls_back_to_a_request(make, mo
     buttons.emit("translate", "900", "🇬🇧", entry["actions"]["🇬🇧"])
     r.put_file = broken
     assert r.translation_requests([], "C") == 0 and len(buttons.actions("translate")) == 1   # kept for the next tick
+
+
+def test_a_translation_is_posted_in_the_channel_its_flag_was_tapped_in(make, monkeypatch):
+    """A companion program may post its transcripts in another channel and register the flags itself, naming that
+    channel in the payload: the translation, and a later corrected one, go there and not to the conversation channel."""
+    r, buttons = with_buttons(make, monkeypatch, "[00:00] Bonjour.", "Whisper medium transcript, language fr (97%), 3 s", ["en"])
+    where = []
+    r.post = lambda channel, content, **kw: (where.append(channel), "901")[1]
+    payload = {"code": "en", "language": "English", "note": "inbox/n.md", "transcript": "inbox/n.md", "voice_message": "777",
+               "channel": "VOICE", "translation": "raw/translations/n-en.md"}
+    buttons.emit("translate", "777", "🇬🇧", payload)
+    r.blob_text = lambda sha: "Hello."
+    tree = [{"path": "raw/translations/n-en.md", "sha": "s1"}]
+    assert r.translation_requests(tree, "C") == 1 and where == ["VOICE"]
+    r.blob_text = lambda sha: "Hello, corrected."
+    r.translation_requests([{"path": "raw/translations/n-en.md", "sha": "s2"}], "C")
+    assert where == ["VOICE", "VOICE"]
