@@ -96,7 +96,11 @@ def transcribe(path):
         # cpu_threads=3 leaves a core for the rest of the host; int8 keeps RAM near 1 GB
         _WHISPER = WhisperModel(CFG.whisper_model, device="cpu", compute_type="int8",
                                 download_root=CFG.whisper_dir, cpu_threads=3)
-    segments, info = _WHISPER.transcribe(path, vad_filter=True, beam_size=CFG.whisper_beam)
+    # initial_prompt: the owner's vocabulary as context for the first window (None = no prompt). It biases spelling
+    # only; with vad_filter on, silence is cut before the model sees it, which is what keeps a prompt from being
+    # echoed back as text on an empty recording.
+    segments, info = _WHISPER.transcribe(path, vad_filter=True, beam_size=CFG.whisper_beam,
+                                         initial_prompt=CFG.whisper_prompt or None)
     out = []
     for seg in segments:
         if seg.start > CFG.max_audio_seconds:
