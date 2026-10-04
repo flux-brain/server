@@ -12,6 +12,8 @@ from . import state
 # Memory reconcile notes coalesce (review round 2 N4): a start whose only captures are reconcile notes waits
 # RECONCILE_COALESCE after the latest reconcile change, at most RECONCILE_MAX after the first, so a Claude Code session's
 # stream of memory edits is one run; the owner's own captures never wait for this and carry the reconcile notes along.
+# The two names below are the package defaults; the values in use come from flux.toml [routine] reconcile_coalesce_s
+# and reconcile_max_s (CFG.reconcile_coalesce / CFG.reconcile_max), so a host can trade fewer runs for a faster page.
 RECONCILE_NOTE = re.compile(r"^inbox/[^/]*Z-memory-reconcile-[a-z0-9-]+\.md$")
 RECONCILE_COALESCE = 300
 RECONCILE_MAX = 900
@@ -81,7 +83,7 @@ class WatchMixin:
             if any(RECONCILE_NOTE.match(p) for p in host):
                 first = st.get("reconcile_first") or now
                 st["reconcile_first"] = first
-                st["reconcile_hold_until"] = min(now + RECONCILE_COALESCE, first + RECONCILE_MAX)
+                st["reconcile_hold_until"] = min(now + CFG.reconcile_coalesce, first + CFG.reconcile_max)
             log(f"server note(s) changed, start pending: {', '.join(host)}")
         if st.get("obsidian_fire_at") and now >= st["obsidian_fire_at"]:
             # Only if a pending note is still in inbox/: an hourly run may have filed it meanwhile

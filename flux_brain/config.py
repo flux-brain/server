@@ -66,6 +66,10 @@ class Config:
         self.fire_token = env.get("ROUTINE_FIRE_TOKEN", "")
         self.fire_min_interval = int(g("routine", "min_interval_s", 180))
         self.marker_fresh = int(g("routine", "marker_fresh_s", 1200))
+        # memory reconcile notes: a start made only of them waits this long after the latest one, at most
+        # reconcile_max_s after the first (defaults = relay/watch.py RECONCILE_COALESCE / RECONCILE_MAX)
+        self.reconcile_coalesce = int(g("routine", "reconcile_coalesce_s", 300))
+        self.reconcile_max = int(g("routine", "reconcile_max_s", 900))
         # run guard (2026-09-29): no start this long after a run ends or after a late routine commit; the git author
         # name of the routines' commits, which the relay audits against the run marker
         self.post_run_quiet = int(g("routine", "post_run_quiet_s", 120))
