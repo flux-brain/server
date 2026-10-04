@@ -65,6 +65,10 @@ token_file = "gmail-token.json"
 originals_to_drive = true          # false: emails and their attachments stay in Gmail only (text still extracted)
 follow_threads = true              # a reply arriving in a conversation already filed is filed too (no new label needed)
 follow_days = 3                    # how far back an incoming reply is looked for
+voicemail_from = []                # e.g. ["voicemail@operator.example"]: a new email from one of these in the inbox is a
+                                   # voicemail notice; its recording is transcribed, the transcript is posted in the
+                                   # conversation channel, a capture is filed (kind: voicemail)
+voicemail_archive = true           # ... and the email then leaves the inbox (false: it stays there)
 
 [tasks]                            # when modules.tasks = true
 token_file = "tasks-token.json"

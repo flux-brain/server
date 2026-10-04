@@ -46,6 +46,7 @@ those two files; the code contains none.
 | Drive attachments | shipped (`flux-drive-auth`) | Google Cloud OAuth client, a folder |
 | Drive link details (`[drive] links`) | shipped, off by default | a Drive token that can read the linked files (drive.readonly) |
 | Gmail feed | shipped (`flux-gmail`, `flux-gmail-auth`) | Gmail API, scope gmail.modify |
+| Voicemail emails | shipped (part of `flux-gmail`, `[gmail] voicemail_from`), off by default | the Gmail token; transcribed, posted, archived |
 | Google Tasks checklists | shipped (`flux-tasks`, `flux-tasks-auth`) | Tasks API, scope tasks |
 | Google Calendar day files | shipped (`flux-calendar`, `flux-calendar-auth`) | Calendar API, two read-only scopes (events, calendar list) |
 | Drive watch | shipped (`flux-drive-watch`), off by default | a Drive token that can read the watched folders (drive.readonly) |

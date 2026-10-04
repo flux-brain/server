@@ -153,6 +153,11 @@ class Config:
         # (flux_brain.gmail, the follow pass). `follow_days` is how far back an incoming message is looked for.
         self.gmail_follow_threads = bool(g("gmail", "follow_threads", True))
         self.gmail_follow_days = int(g("gmail", "follow_days", 3))
+        # Voicemail senders (flux_brain.gmail, the voicemail pass): addresses whose inbox emails are a phone operator's
+        # "new voicemail" notice with the recording attached. Each is filed by itself, its transcript is posted in the
+        # conversation channel through notify/, and the email leaves the inbox. Empty = the pass is off.
+        self.gmail_voicemail_from = [str(a).strip().lower() for a in g("gmail", "voicemail_from", []) if str(a).strip()]
+        self.gmail_voicemail_archive = bool(g("gmail", "voicemail_archive", True))
         self.tasks_token_file = str(self.home / g("tasks", "token_file", "tasks-token.json"))
         self.tasks_prefix = g("tasks", "prefix", "📁 ")
         self.tasks_tick = int(g("tasks", "tick_s", 60))
