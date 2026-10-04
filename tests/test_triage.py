@@ -3,6 +3,7 @@ only the OWNER's reaction acts, expiry, a deleted post; triage reasons, skips, f
 No network: Gmail, Discord and GitHub are fakes; state lives in the temporary FLUX_HOME of conftest."""
 import shutil
 import time
+import urllib.parse
 
 import pytest
 
@@ -29,11 +30,29 @@ def relay_with(reactors):
     r = m.Relay.__new__(m.Relay)
     r.state, r.calls = {}, []
 
+    def message(t):
+        """The Discord message object of a tracked post, its reaction counts built from `reactors` (bot + the rest);
+        None when `reactors` says the post is gone."""
+        out = []
+        for emoji in t["actions"]:
+            who = reactors(f"/channels/{t['channel']}/messages/{t['message']}/reactions/{urllib.parse.quote(emoji)}")
+            if who.status_code == 404:
+                return None
+            out.append({"emoji": {"id": None, "name": emoji.replace("\ufe0f", "")}, "count": len(who.json()) + 1, "me": True})
+        return {"id": t["message"], "reactions": out}
+
     def discord(method, path, **kw):
         r.calls.append((method, path))
-        if method == "GET":
-            return reactors(path)
-        return Resp(204)
+        if method != "GET":
+            return Resp(204)
+        if path.endswith("/messages"):                    # the channel's message list: one call covers every post
+            ch = path.split("/")[2]
+            return Resp(200, [x for x in (message(t) for _, t in buttons.tracked() if t["channel"] == ch) if x])
+        if "/reactions/" not in path:                     # one message by id (a post the list did not hold)
+            t = next(t for _, t in buttons.tracked() if t["message"] == path.rsplit("/", 1)[1])
+            x = message(t)
+            return Resp(200, x) if x else Resp(404)
+        return reactors(path)
     r.discord = discord
     return r
 
@@ -76,6 +95,17 @@ def test_someone_elses_reaction_does_nothing_and_checks_are_throttled():
     n = len(r.calls)
     r.check_reactions(now=now + 10)
     assert len(r.calls) == n                      # within REACTION_EVERY: no Discord call at all
+
+
+def test_a_scan_is_one_list_call_and_asks_who_reacted_only_where_someone_did():
+    for i in range(12):
+        buttons.track(f"p{i}", "c1", "triage", {"✅": {"thread": f"t{i}"}, "✍️": {"thread": f"t{i}"}}, 3600)
+    r = relay_with(lambda path: Resp(200, [{"id": OWNER}] if "/p7/" in path and "%E2%9C%8D" in path else []))
+    assert r.check_reactions(now=time.time()) == 0
+    gets = [p for mth, p in r.calls if mth == "GET"]
+    assert gets == ["/channels/c1/messages", "/channels/c1/messages/p7/reactions/%E2%9C%8D%EF%B8%8F"]   # 2 calls, not 24
+    pend = [t for _, t in buttons.tracked() if t.get("pending")]
+    assert len(pend) == 1 and pend[0]["message"] == "p7" and pend[0]["pending"]["emoji"] == "✍️"   # found without its variation selector
 
 
 def test_expired_or_deleted_posts_are_forgotten():
