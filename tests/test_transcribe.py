@@ -22,6 +22,8 @@ def stub(monkeypatch, calls):
 
         def transcribe(self, path, **kw):
             calls.append(("beam", kw["beam_size"]))
+            if kw.get("initial_prompt") is not None:
+                calls.append(("prompt", kw["initial_prompt"]))
             return [Seg()], Info()
     monkeypatch.setitem(sys.modules, "faster_whisper", types.SimpleNamespace(WhisperModel=WhisperModel))
     monkeypatch.setattr(extract, "_WHISPER", None)   # the model is cached per process: start each case without one
@@ -43,3 +45,14 @@ def test_model_and_beam_from_the_configuration(monkeypatch):
     monkeypatch.setattr(CFG, "whisper_beam", 5)
     _, method = extract.transcribe("x.ogg")
     assert calls == [("load", "medium"), ("beam", 5)] and method.startswith("Whisper medium transcript, ")
+
+
+def test_vocabulary_prompt_is_passed_only_when_set(monkeypatch):
+    calls = []
+    stub(monkeypatch, calls)
+    assert CFG.whisper_prompt == ""
+    extract.transcribe("x.ogg")
+    assert not [c for c in calls if c[0] == "prompt"]          # empty setting -> no prompt at all (None)
+    monkeypatch.setattr(CFG, "whisper_prompt", "Anna, Northwind")
+    extract.transcribe("x.ogg")
+    assert ("prompt", "Anna, Northwind") in calls
