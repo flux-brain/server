@@ -361,3 +361,84 @@ def test_followup_capture_says_so(monkeypatch):
     r2, _, puts2 = _relay_with_one_email(monkeypatch, mod_drive=False, to_drive=False)
     _, path2 = r2.file_thread("T1", ["m1"])
     assert "kind: followup" not in dict(puts2)[path2]
+
+
+# ---------- voicemail pass ([gmail] voicemail_from): an operator's voicemail email is transcribed, posted, archived ----------
+def _voicemail_relay(monkeypatch, heard_text="[00:01] Hello, it is Anna. Call me back.", archive=True):
+    """A GmailRelay built through its real __init__ (Drive, GitHub, token and converter faked) whose inbox holds one
+    voicemail email with a .wav attachment. Returns (relay, GitHub puts, Gmail calls)."""
+    puts, calls = [], []
+    monkeypatch.setattr(gr, "DRY", False)
+    monkeypatch.setattr(gr, "save_state", lambda st: None)
+    monkeypatch.setattr(gr, "session", lambda: None)
+    monkeypatch.setattr(gr, "GitHub", lambda: types.SimpleNamespace(put_file=lambda p, d, m: puts.append((p, d.decode()))))
+    monkeypatch.setattr(gr, "GoogleToken", lambda *a: types.SimpleNamespace(headers=lambda: {}))
+    monkeypatch.setattr(gr, "extract_with_retry", lambda blob, mime, name: (heard_text, "Whisper transcript, language en, 6 s"))
+    monkeypatch.setattr(gr.CFG, "mod_drive", False)
+    monkeypatch.setattr(gr.CFG, "gmail_follow_threads", False)
+    monkeypatch.setattr(gr.CFG, "gmail_voicemail_from", ["voicemail@operator.example"])
+    monkeypatch.setattr(gr.CFG, "gmail_voicemail_archive", archive)
+    m = EmailMessage()
+    m["Subject"], m["From"], m["To"] = "New voicemail from 0100000001", "voicemail@operator.example", "owner@example.com"
+    m.set_content("New message:\n\tFrom : 0100000001\n\tLength : 6 seconds\n")
+    m.add_attachment(b"RIFF fake", maintype="audio", subtype="x-wav", filename="20260101_0100000001.wav")
+    raw = gr.base64.urlsafe_b64encode(m.as_bytes()).decode()
+    r = gr.GmailRelay({"filed": {}})
+    r.label_ids = lambda: {gr.CFG.gmail_label: "L1", gr.CFG.gmail_filed_label: "L2"}
+
+    def api(method, path, **kw):
+        calls.append((method, path, kw.get("params"), kw.get("json")))
+        if path == "/messages" and "q" in (kw.get("params") or {}):
+            return {"messages": [{"id": "v1", "threadId": "TV"}]}
+        if path == "/messages":
+            return {"messages": []}                    # nothing carries the label
+        if path.startswith("/messages/v1"):
+            return {"internalDate": "1790000000000", "raw": raw}
+        return {}
+    r.api = api
+    return r, puts, calls
+
+
+def test_voicemail_is_filed_posted_and_archived(monkeypatch):
+    r, puts, calls = _voicemail_relay(monkeypatch)
+    assert r.run() == 1
+    q = next(c[2]["q"] for c in calls if c[1] == "/messages" and "q" in (c[2] or {}))
+    assert q == "in:inbox {from:voicemail@operator.example}"
+    capture = next(d for p, d in puts if p.startswith("inbox/") and p.endswith("-gmail-v1.md"))
+    assert "kind: voicemail" in capture and "A voicemail left on the owner's phone" in capture
+    path, notice = next((p, d) for p, d in puts if p.startswith("notify/"))
+    assert path.endswith("-voicemail-v1.md") and "question" not in path
+    assert notice.startswith("📞 Voicemail (inbox/") and "-gmail-v1.md):" in notice.splitlines()[0]
+    assert "New message: From : 0100000001 Length : 6 seconds" in notice
+    assert "> [00:01] Hello, it is Anna. Call me back." in notice and "(Whisper transcript, language en, 6 s)" in notice
+    mods = [c[3] for c in calls if c[1] == "/messages/batchModify"]
+    assert mods == [{"ids": ["v1"], "removeLabelIds": ["INBOX"]}]          # archived; NOT given the Filed label
+    assert "v1" in r.st["filed"] and "TV" not in (r.st.get("threads") or {})  # and its conversation is not followed
+    assert r.run() == 0                                                    # still listed by the fake inbox: not filed twice
+
+
+def test_voicemail_with_nothing_heard_says_so_and_can_stay_in_the_inbox(monkeypatch):
+    r, puts, calls = _voicemail_relay(monkeypatch, heard_text="", archive=False)
+    assert r.run() == 1
+    notice = next(d for p, d in puts if p.startswith("notify/"))
+    assert "Nothing could be heard" in notice and ">" not in notice
+    assert not [c for c in calls if c[1] == "/messages/batchModify"]
+
+
+def test_voicemail_pass_is_off_without_senders_and_ignores_a_malformed_address(monkeypatch):
+    r, puts, calls = _voicemail_relay(monkeypatch)
+    monkeypatch.setattr(gr.CFG, "gmail_voicemail_from", [])
+    assert r.run() == 0 and not puts
+    monkeypatch.setattr(gr.CFG, "gmail_voicemail_from", ["x@y.example OR in:anywhere"])
+    assert r.run() == 0 and not [c for c in calls if "q" in (c[2] or {})]
+
+
+def test_voicemail_that_keeps_failing_is_left_in_the_inbox_with_one_alert(monkeypatch):
+    r, puts, calls = _voicemail_relay(monkeypatch)
+    alerts = []
+    monkeypatch.setattr(gr, "ops_alert", lambda text: alerts.append(text))
+    r.file_thread = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("GitHub 502"))
+    for _ in range(gr.THREAD_GIVE_UP):
+        assert r.run() == 0
+    assert len(alerts) == 1 and "voicemail" in alerts[0] and "v1" in r.st["filed"]
+    assert not [c for c in calls if c[1] == "/messages/batchModify"]
