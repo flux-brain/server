@@ -13,6 +13,7 @@ from conftest import ROOT
 
 TASKS = "inbox/2026-09-22T163859Z-tasks-garden.md"
 WA = "inbox/2026-09-22T180000Z-whatsapp-acct-abc123.md"
+TG = "inbox/2026-10-04T180000Z-telegram-acct-4521.md"
 KEEPN = "inbox/2026-09-17T122915Z-keep-note-abc123.md"
 
 
@@ -58,6 +59,8 @@ def test_every_registered_kind_is_server_written():
 def test_descriptions():
     assert relay.describe_inbox(TASKS) == "`" + TASKS + "` (Tasks checklist edit, project garden)"
     assert "WhatsApp" in relay.describe_inbox(WA)
+    assert "Telegram forward, acct-4521" in relay.describe_inbox(TG)   # a server-written note, not a typed one
+    assert captures.host_kind(TG) == ("telegram", "acct-4521") and not captures.carries_page("telegram")
 
 
 def test_page_hint_eligibility():
