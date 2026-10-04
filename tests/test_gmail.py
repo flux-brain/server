@@ -442,3 +442,37 @@ def test_voicemail_that_keeps_failing_is_left_in_the_inbox_with_one_alert(monkey
         assert r.run() == 0
     assert len(alerts) == 1 and "voicemail" in alerts[0] and "v1" in r.st["filed"]
     assert not [c for c in calls if c[1] == "/messages/batchModify"]
+
+
+# ---------- caller names from the owner's contacts ([gmail] voicemail_contacts_token_file) ----------
+def test_number_key_matches_national_and_international_forms():
+    assert gr.number_key("01 00 00 00 01") == gr.number_key("+33 1 00 00 00 01") == "100000001"
+    assert gr.number_key("12345") == ""
+
+
+def test_known_caller_is_named_in_the_post_and_the_capture(monkeypatch):
+    r, puts, calls = _voicemail_relay(monkeypatch)
+    r._contacts = {"100000001": "Anna Example", "999999999": "Someone Else"}
+    assert r.run() == 1
+    notice = next(d for p, d in puts if p.startswith("notify/"))
+    capture = next(d for p, d in puts if p.startswith("inbox/"))
+    assert "In your contacts: 0100000001 = Anna Example" in notice and "Someone Else" not in notice
+    assert "In the owner's contacts: 0100000001 = Anna Example." in capture
+
+
+def test_owner_line_and_dates_are_not_callers_and_unknown_numbers_add_nothing(monkeypatch):
+    r, puts, calls = _voicemail_relay(monkeypatch)
+    r._contacts = {"200000002": "The Owner", "100000001": "Anna Example", "202601011": "A Date"}
+    text = "To : 0200000002 From : 0100000001 On : 2026-01-01 12:00:00 and 0300000003"
+    assert r.known_callers(text, own="+33200000002@owner.example") == ["0100000001 = Anna Example"]
+    r._contacts = {}
+    assert r.known_callers(text) == []
+
+
+def test_contacts_are_optional_and_a_failure_never_stops_the_filing(monkeypatch):
+    r, puts, calls = _voicemail_relay(monkeypatch)
+    assert r.contact_index() == {}                                  # no token configured: no lookup at all
+    r._contacts = None
+    monkeypatch.setattr(gr.CFG, "gmail_voicemail_contacts_token_file", "/nonexistent/token.json")
+    monkeypatch.setattr(gr, "GoogleToken", lambda *a: (_ for _ in ()).throw(RuntimeError("token refresh failed")))
+    assert r.run() == 1 and any(p.startswith("notify/") for p, _ in puts)

@@ -158,6 +158,10 @@ class Config:
         # conversation channel through notify/, and the email leaves the inbox. Empty = the pass is off.
         self.gmail_voicemail_from = [str(a).strip().lower() for a in g("gmail", "voicemail_from", []) if str(a).strip()]
         self.gmail_voicemail_archive = bool(g("gmail", "voicemail_archive", True))
+        # Optional: a Google token that may read the owner's contacts (scope contacts.readonly or contacts). With it, a
+        # phone number in a voicemail email that belongs to a contact is shown with that contact's name.
+        vct = g("gmail", "voicemail_contacts_token_file", "")
+        self.gmail_voicemail_contacts_token_file = str(self.home / vct) if vct else ""
         self.tasks_token_file = str(self.home / g("tasks", "token_file", "tasks-token.json"))
         self.tasks_prefix = g("tasks", "prefix", "📁 ")
         self.tasks_tick = int(g("tasks", "tick_s", 60))
