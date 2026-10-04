@@ -29,6 +29,8 @@ author = "Claude"                  # git author name of the routines' commits (t
 settle_s = 60                      # an Obsidian note must stay unchanged this long before it counts
 max_attachment_mb = 20
 audio_minutes = 30                 # transcription cap
+whisper_model = "small"            # "medium" or "large-v3-turbo" mishear fewer words; slower (2 to 4 times) and more RAM
+whisper_beam = 1                   # 5 searches wider: a little slower, fewer wrong words
 echo_transcripts = true            # reply to a voice note with what was heard, so a misheard word can be corrected
 
 [paths]

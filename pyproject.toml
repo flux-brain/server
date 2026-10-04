@@ -21,7 +21,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-audio = ["faster-whisper>=1.0"]        # voice memo transcription (downloads the "small" model, ~460 MB, on first use)
+audio = ["faster-whisper>=1.0"]        # voice memo transcription (downloads the model on first use: "small", ~460 MB, unless [capture] whisper_model says otherwise)
 google = ["google-auth-oauthlib>=1.2"]    # the four consent commands (flux-drive-auth, flux-gmail-auth, flux-tasks-auth, flux-calendar-auth); API calls use plain requests
 drive = ["google-auth-oauthlib>=1.2"]     # the old name of the same extra, kept so `pip install "flux-brain[drive]"` still works
 dev = ["pytest>=8"]
