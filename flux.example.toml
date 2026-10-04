@@ -69,6 +69,8 @@ voicemail_from = []                # e.g. ["voicemail@operator.example"]: a new 
                                    # voicemail notice; its recording is transcribed, the transcript is posted in the
                                    # conversation channel, a capture is filed (kind: voicemail)
 voicemail_archive = true           # ... and the email then leaves the inbox (false: it stays there)
+voicemail_contacts_token_file = "" # optional: a Google token allowed to read your contacts; a caller's number found
+                                   # there is then shown with the contact's name
 
 [tasks]                            # when modules.tasks = true
 token_file = "tasks-token.json"
