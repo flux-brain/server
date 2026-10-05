@@ -12,6 +12,12 @@ branch = "main"
 [discord]
 channel = "flux"                   # capture + conversation channel (id cached in state once found)
 log_channel = "flux-log"           # muted log channel; while absent, everything posts to `channel`
+# Optional channels, one per kind of post (leave a line out and that kind stays in `channel`; a named channel that
+# does not exist yet, or that the bot cannot see, changes nothing until it does). What you write in one of them is
+# filed like a message in `channel`, so a reply under a digest or a voicemail notice is read.
+# digest_channel = "flux-digest"   # daily and weekly digests: read when you choose, safe to mute
+# actions_channel = "flux-actions" # posts that wait for a tap: email triage, Drive folder suggestions
+# voice_channel = "voice-notes"    # voicemail notices ([gmail] voicemail_from)
 # guild id and bot token: flux.env
 
 [routine]

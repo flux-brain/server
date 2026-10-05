@@ -12,6 +12,9 @@ on. Everything talks to your vault repository through the GitHub API; nothing is
 3. Create two text channels, both private: `flux` and `flux-log`. On each, add the bot's role with
    View Channel + Send Messages (the bot cannot grant itself access; a missing grant shows as
    `Missing Access` in the relay log). Mute `flux-log`.
+   Optional, at any time: one channel each for the digests, for the posts that wait for a tap and for
+   the voicemail notices (`[discord] digest_channel`, `actions_channel`, `voice_channel` in
+   `flux.toml`). Same grant plus Read Message History; until a channel exists its posts stay in `flux`.
 4. Find your user id (Discord settings, Advanced, Developer Mode, then copy id on your profile) and
    the server id; they go in `flux.toml` and `flux.env`.
 

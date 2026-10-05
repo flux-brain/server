@@ -16,6 +16,14 @@ DISCORD = "https://discord.com/api/v10"
 # LOG channel (`CFG.log_channel_name`, meant to be muted) carries what needs no human: `-filed.md` run summaries, the
 # 🤖 run links and the 📥 "note received" posts. Until the log channel exists and the bot role can see it, every
 # post goes to the conversation channel as before (see find_log_channel).
+#
+# Three optional channels since 2026-10-05, named in flux.toml and off by default (the owner: the conversation channel
+# mixed what he writes, what waits for a tap and what is only read): DIGEST (`[discord] digest_channel`, the daily
+# and weekly briefings), ACTIONS (`actions_channel`, the host modules' posts with buttons: lib.buttons) and VOICE
+# (`voice_channel`, the voicemail notices). Same opt-in as the log channel: a kind whose channel is not named, does
+# not exist or is hidden from the bot stays in the conversation channel. What the owner writes in one of them is
+# filed like a message of the conversation channel (inbound_extra), so a reply under a digest is never lost.
+EXTRA_CHANNELS = ("digest", "actions", "voice")
 
 
 class DiscordMixin:
@@ -53,6 +61,40 @@ class DiscordMixin:
             st["log_channel_missing"] = True
             log(f"#{CFG.log_channel_name} not visible to the bot; everything posts to the conversation channel until it is")
         return None
+
+    def find_extra_channel(self, kind):
+        """Id of the optional channel `kind` (EXTRA_CHANNELS), or None when it is not named in flux.toml or not
+        visible to the bot. Cached in state under `channels` WITH the name it was found by, so a new name in
+        flux.toml is looked up again (a rename in Discord changes nothing); a miss is logged once per name. The
+        guild's channel list is read at most once per run, whatever the number of kinds still missing."""
+        name = getattr(CFG, f"{kind}_channel_name", "")
+        if not name:
+            return None
+        cache = self.state.setdefault("channels", {})
+        rec = cache.get(kind) or {}
+        if rec.get("name") == name and rec.get("id"):
+            return rec["id"]
+        if not hasattr(self, "_guild_channels"):
+            r = self.discord("GET", f"/guilds/{self.guild}/channels")
+            r.raise_for_status()
+            self._guild_channels = r.json()
+        for c in self._guild_channels:
+            if c["type"] == 0 and c["name"] == name:
+                cache[kind] = {"name": name, "id": c["id"]}
+                log(f"{kind} channel #{name} found ({c['id']})")
+                return c["id"]
+        if rec.get("name") != name:
+            cache[kind] = {"name": name, "id": None}
+            log(f"#{name} not visible to the bot; {kind} posts go to the conversation channel until it is")
+        return None
+
+    def find_extra_channels(self):
+        """{kind: id} of the optional channels found this run (main() keeps it as `self.extra`)."""
+        return {k: i for k in EXTRA_CHANNELS if (i := self.find_extra_channel(k))}
+
+    def target(self, kind, channel):
+        """Channel for a post of `kind` (EXTRA_CHANNELS): its own channel when main() found one, else `channel`."""
+        return (getattr(self, "extra", None) or {}).get(kind) or channel
 
     def log_target(self, channel):
         """Channel for a post that needs no human: the log channel when main() found one, else `channel`."""

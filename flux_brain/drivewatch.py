@@ -246,7 +246,7 @@ class Watcher:
             if DRY:
                 print(text)
                 continue
-            ch = bot.channel_id(CFG.channel_names, self.st)
+            ch = bot.actions_channel(self.st)   # its own channel when flux.toml names one
             mid = bot.post(ch, text)
             bot.react(ch, mid, ADD)
             buttons.track(mid, ch, "drive-watch", {ADD: {"folder": fid, "path": path}}, 7 * 86400)

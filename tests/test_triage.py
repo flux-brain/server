@@ -161,6 +161,9 @@ class FakeBot:
     def channel_id(self, names, cache):
         return "c1"
 
+    def actions_channel(self, cache):
+        return "c1"
+
     def post(self, ch, text):
         self.posts.append(text)
         return f"p{len(self.posts)}"
@@ -261,3 +264,17 @@ def test_module_posts_suppress_link_previews():
     bot.call = lambda method, path, **kw: sent.update(kw) or {"id": "m1"}
     assert bot.post("c1", "hello https://example.com") == "m1"
     assert sent["json"]["flags"] & 4
+
+
+def test_module_posts_go_to_the_actions_channel_when_named_and_visible(monkeypatch):
+    bot, calls = buttons.Bot(), []
+    guild = [{"type": 0, "name": "flux", "id": "c1"}]
+    monkeypatch.setattr(bot, "call", lambda method, path, **kw: calls.append(path) or list(guild))
+    cache = {}
+    assert bot.actions_channel(cache) == "c1" and "actions_channel" not in cache   # not named: conversation channel
+    monkeypatch.setattr(CFG, "actions_channel_name", "flux-actions")
+    assert bot.actions_channel(cache) == "c1"                    # named, not created yet: falls back, nothing cached for it
+    guild.append({"type": 0, "name": "flux-actions", "id": "a1"})
+    assert bot.actions_channel(cache) == "a1" and cache["actions_channel"] == {"name": "flux-actions", "id": "a1"}
+    n = len(calls)
+    assert bot.actions_channel(cache) == "a1" and len(calls) == n   # cached: no guild read

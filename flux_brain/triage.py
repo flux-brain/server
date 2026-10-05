@@ -137,7 +137,7 @@ class Triage:
             if DRY:
                 print(text, "\n")
             else:
-                ch = self.bot.channel_id(CFG.channel_names, self.st)
+                ch = self.bot.actions_channel(self.st)   # its own channel when flux.toml names one
                 mid = self.bot.post(ch, text)
                 for e in (FILE, DRAFT):
                     self.bot.react(ch, mid, e)
