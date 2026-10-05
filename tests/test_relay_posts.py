@@ -660,3 +660,131 @@ def test_other_notify_files_and_silent_voicemails_get_no_flags(h, monkeypatch):
     r3, _ = _notice_relay(h, monkeypatch, VM_NOTICE, langs=())
     r3.outbound("C", [blob("notify/2026-01-01T1000Z-voicemail-v1.md")])
     assert buttons.tracked() == [] and not r.calls and not r2.calls and not r3.calls
+
+
+# ---------- the relay writes the run marker itself ([routine] relay_marker, 2026-10-05) ----------
+class MarkerGH:
+    """The contents calls place_marker / take_back_marker make, over one in-memory `.run/active`."""
+
+    def __init__(self, text=None, put_file_result=None, boom=False):
+        self.text, self.ops, self.put_file_result, self.boom = text, [], put_file_result, boom
+
+    def get(self, path):
+        return (self.text, "sha1") if self.text is not None else (None, None)
+
+    def put_file(self, path, data, message):
+        self.ops.append(("put_file", message))
+        if self.boom:
+            raise requests.ConnectionError("down")
+        if self.put_file_result is False:
+            return False
+        self.text = data.decode()
+        return True
+
+    def put(self, path, text, message, sha=None):
+        self.ops.append(("put", message, sha))
+        self.text = text
+
+    def delete(self, path, sha, message):
+        self.ops.append(("delete", message, sha))
+        self.text = None
+
+
+@pytest.fixture
+def relay_marker(monkeypatch):
+    monkeypatch.setattr(m.CFG, "relay_marker", True)
+
+
+def marked(h, gh, st=None):
+    r = h.relay(st if st is not None else {"fire_pending": True})
+    r.ghc = gh
+    return r
+
+
+def run_id_of(text):
+    return [ln.split(": ")[1] for ln in text.splitlines() if ln.startswith("run: ")][0]
+
+
+def test_marker_is_written_before_the_start_and_named_in_the_start_message(h, relay_marker):
+    gh = MarkerGH()
+    r = marked(h, gh)
+    r.maybe_fire(0, "C", [blob(DISC)])
+    assert gh.ops == [("put_file", "run: start")] and h.fired()
+    assert gh.text.startswith("started: 20") and gh.text.endswith("by: relay\n")
+    rid = run_id_of(gh.text)
+    assert f"the relay already wrote `.run/active` for this run (run id `{rid}`)" in h.fire_text()
+    assert r.marker_started(gh.text, None) == pytest.approx(time.time(), abs=5)   # the format track_run_marker reads
+
+
+def test_switch_off_leaves_the_marker_to_the_run(h):
+    r = h.relay({"fire_pending": True})   # no r.ghc: any marker call would raise
+    r.maybe_fire(0, "C", [blob(DISC)])
+    assert h.fired() and "Run marker" not in h.fire_text()
+
+
+def test_a_fresh_marker_found_at_the_last_moment_holds_the_start(h, relay_marker):
+    gh = MarkerGH(marker(30))     # a scheduled run pushed its own since this tick's tree was read
+    st = {"fire_pending": True}
+    marked(h, gh, st).maybe_fire(0, "C", [blob(DISC)])
+    assert gh.ops == [] and not h.fired() and st["fire_pending"] is True
+
+
+def test_a_stale_marker_is_overwritten(h, relay_marker):
+    gh = MarkerGH(marker(1300))
+    marked(h, gh).maybe_fire(0, "C", [blob(DISC)])
+    assert gh.ops == [("put", "run: start", "sha1")] and h.fired() and "by: relay" in gh.text
+
+
+@pytest.mark.parametrize("code", [429, 500, 401])
+def test_marker_is_taken_back_when_the_start_is_refused(h, relay_marker, monkeypatch, code):
+    monkeypatch.setattr(requests, "post", lambda url, **kw: Resp(code, headers={"Retry-After": "60"}, text="no"))
+    monkeypatch.setattr(m.fire, "ops_alert", lambda text: None)
+    gh = MarkerGH()
+    st = {"fire_pending": True}
+    marked(h, gh, st).maybe_fire(0, "C", [blob(DISC)])
+    assert [o[:2] for o in gh.ops] == [("put_file", "run: start"), ("delete", "run: start undone")] and gh.text is None
+    assert st["fire_not_before"] > time.time()
+
+
+def test_marker_is_taken_back_when_the_start_cannot_be_sent(h, relay_marker, monkeypatch):
+    def down(url, **kw):
+        raise requests.ConnectionError("down")
+    monkeypatch.setattr(requests, "post", down)
+    gh = MarkerGH()
+    st = {"fire_pending": True}
+    marked(h, gh, st).maybe_fire(0, "C", [blob(DISC)])
+    assert gh.text is None and st["fire_pending"] is True
+
+
+def test_another_runs_marker_is_never_taken_back(h, relay_marker):
+    gh = MarkerGH("started: 2026-10-05T00:00:00Z\nrun: feedf00d\nby: relay\n")
+    r = marked(h, gh)
+    r.take_back_marker("0badc0de")
+    r.take_back_marker(None)
+    assert gh.ops == [] and gh.text is not None
+
+
+def test_a_failed_marker_write_postpones_the_start(h, relay_marker):
+    gh = MarkerGH(boom=True)
+    st = {"fire_pending": True}
+    marked(h, gh, st).maybe_fire(0, "C", [blob(DISC)])
+    assert not h.fired() and st["fire_pending"] is True and time.time() < st["fire_not_before"] <= time.time() + 61
+
+
+def test_a_marker_that_appeared_during_the_write_holds_the_start(h, relay_marker):
+    gh = MarkerGH(put_file_result=False)     # put_file: "already there"; the re-read finds nothing of ours
+    marked(h, gh).maybe_fire(0, "C", [blob(DISC)])
+    assert not h.fired()
+
+
+def test_audit_counts_the_relays_marker_commit_as_a_marker(h):
+    # the run's commits follow an owner-authored `run: start`: not late, and the owner's commit is not fetched
+    st, r = audited(h, [("m", "Owner", "run: start", None), ("n", "Claude", "notify: answer", None),
+                        ("e", "Claude", "inbox: 1 capture(s) filed", "removed")])
+    assert "late_commits" not in st and "late_same_push" not in st and r.ghc.fetched == ["n", "e"]
+
+
+def test_audit_after_a_marker_taken_back_sees_no_marker(h):
+    st, _ = audited(h, [("m", "Owner", "run: start", None), ("u", "Owner", "run: start undone", None),
+                        ("x", "Claude", "inbox: fold in", None)])
+    assert st["late_commits"] == 1
