@@ -41,7 +41,7 @@ those two files; the code contains none.
 
 | Module | State in v1 | Needs |
 |---|---|---|
-| Discord relay | core | a bot, two channels |
+| Discord relay | core | a bot, two channels (three more optional: digests, posts with buttons, voicemails) |
 | Attachment text extraction | core | poppler, tesseract, optional faster-whisper |
 | Drive attachments | shipped (`flux-drive-auth`) | Google Cloud OAuth client, a folder |
 | Drive link details (`[drive] links`) | shipped, off by default | a Drive token that can read the linked files (drive.readonly) |

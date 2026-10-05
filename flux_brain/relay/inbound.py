@@ -63,6 +63,43 @@ class InboundMixin:
                 self.state["last_message_id"] = m["id"]
                 state.save_state(self.state)  # advance per message so a crash never files twice
 
+    def inbound_extra(self, channel):
+        """File what a human wrote in the optional channels (digest, actions, voice: relay/discord.py), exactly as
+        inbound() does for the conversation channel `channel`: a reply under a digest or a voicemail notice is a
+        capture with `in_reply_to`. One cursor per channel (state `extra_last`), started at "now" on first sight. A
+        channel the bot may post in but not read is skipped with one log line; a message that cannot be filed fails
+        the tick and is retried, like in the conversation channel. Returns the number filed."""
+        filed = 0
+        cursors = self.state.setdefault("extra_last", {})
+        skip = {channel, getattr(self, "log_channel", None)}
+        for ch in dict.fromkeys((getattr(self, "extra", None) or {}).values()):
+            if ch in skip:
+                continue
+            first = ch not in cursors
+            r = self.discord("GET", f"/channels/{ch}/messages",
+                             params={"limit": 1} if first else {"after": cursors[ch], "limit": 100})
+            if r.status_code in (403, 404):
+                unread = self.state.setdefault("extra_unreadable", [])
+                if ch not in unread:
+                    unread.append(ch)
+                    log(f"channel {ch} cannot be read ({r.status_code}): what is written there is not filed "
+                        "(grant the bot's role View Channel + Read Message History on it)")
+                continue
+            r.raise_for_status()
+            if ch in self.state.get("extra_unreadable", []):
+                self.state["extra_unreadable"].remove(ch)
+            msgs = sorted(r.json(), key=lambda m: int(m["id"]))
+            if first:
+                cursors[ch] = msgs[-1]["id"] if msgs else "0"
+                state.save_state(self.state)
+                continue
+            for m in msgs:   # at most 100 a tick and channel; the rest follows on the next tick
+                if not m["author"].get("bot") and m.get("type") in (0, 19):
+                    filed += self.file_guarded(ch, m)
+                cursors[ch] = m["id"]
+                state.save_state(self.state)
+        return filed
+
     def file_guarded(self, channel, m):
         """file_message with a per-message failure count (2026-09-17 code review fix 2: head-of-line blocking).
         inbound() advances last_message_id only after a message is filed, so a message whose filing kept raising (an

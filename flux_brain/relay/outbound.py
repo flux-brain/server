@@ -76,7 +76,7 @@ class OutboundMixin:
                 self.discord("PUT", f"/channels/{channel}/messages/{post_id}/reactions/{urllib.parse.quote(emoji)}/@me")
             buttons.track(post_id, channel, "translate", {
                 emoji: {"code": code, "language": TRANSLATE_LANGS[code][1], "note": capture, "transcript": capture,
-                        "voice_message": str(post_id),
+                        "voice_message": str(post_id), "channel": str(channel),   # the translation is a reply: same channel
                         "translation": f"raw/translations/{capture[len('inbox/'):-len('.md')]}-{code}.md"}
                 for emoji, code in flags.items()}, TRANSLATE_TTL_S)
         except Exception as exc:  # noqa: BLE001
@@ -123,7 +123,16 @@ class OutboundMixin:
                 parts = chunk_lines(f"{head} **{e['path']}**\n{body}", 1900)
             # Routing (2026-09-22): run summaries are background -> log channel; questions, answers, drafts and the
             # digests (the owner's choice: "digest to vault channel") stay in the conversation channel.
-            target = self.log_target(channel) if is_run_summary(e["path"]) else channel
+            # Since 2026-10-05 the briefings go to the digest channel and a voicemail notice to the voice channel when
+            # flux.toml names them (relay/discord.py); unnamed or not found, they stay in the conversation channel.
+            if is_run_summary(e["path"]):
+                kind, target = "log", self.log_target(channel)
+            elif e["path"].startswith("briefings/"):
+                kind, target = "digest", self.target("digest", channel)
+            elif VOICEMAIL_NOTICE.match(body):
+                kind, target = "voice", self.target("voice", channel)
+            else:
+                kind, target = "conversation", channel
             if len(parts) > MAX_POST_CHUNKS:
                 parts = parts[:MAX_POST_CHUNKS]
                 parts[-1] = parts[-1][:1800] + f"\n… (continued: <{link}>)"
@@ -161,4 +170,4 @@ class OutboundMixin:
             sent = self.state["posted_sha"]
             state.save_state(self.state)
             # name the channel (2026-09-22): the only proof of the two-channel routing outside Discord itself
-            log(f"posted {e['path']} -> {'log' if target != channel else 'conversation'} channel")
+            log(f"posted {e['path']} -> {kind if target != channel else 'conversation'} channel")

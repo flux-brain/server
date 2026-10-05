@@ -10,7 +10,9 @@ rebase conflicts with the routines or the phone).
             Drive folder, NOT into git, so the repo and the phone copy stay light, and the note links
             the Drive file; without it the note links Discord's copy. The extracted text always lands
             in raw/attachments/.
-  outbound: new files under briefings/daily, briefings/weekly, notify/ -> posted to the conversation channel once.
+  outbound: new files under briefings/daily, briefings/weekly, notify/ -> posted to the conversation channel once
+            (the briefings to the digest channel and the voicemail notices to the voice channel when flux.toml
+            names them, 2026-10-05; what the owner writes in those channels is filed like a message here).
   run link: each time the relay starts the vault-inbox routine it posts the run's claude.ai link to
             the log channel, so the owner can watch Claude work step by step (2026-09-16, the owner).
 
@@ -95,7 +97,8 @@ def main():
             save_state(st)
             return 0
         relay.log_channel = relay.find_log_channel()  # None until the log channel exists: then log_target() = channel
-        filed = relay.inbound(channel)
+        relay.extra = relay.find_extra_channels()  # optional digest / actions / voice channels; {} = all in `channel`
+        filed = relay.inbound(channel) + relay.inbound_extra(channel)
         tree = relay.tree()  # after inbound, so this tick's Discord notes are in it (and excluded by RELAY_NOTE)
         relay.translation_requests(tree, channel)  # flag taps under transcript echoes: post the prepared translation; never raises
         relay.audit_commits(tree, channel)  # run guard: late routine commits hold the next start; never raises

@@ -218,6 +218,9 @@ def test_post_and_tap_adds_the_folder(sug):
         def channel_id(self, names, cache):
             return "c1"
 
+        def actions_channel(self, cache):
+            return "c1"
+
         def post(self, ch, text):
             self.posts.append(text)
             return "p1"

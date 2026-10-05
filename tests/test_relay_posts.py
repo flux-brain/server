@@ -477,6 +477,69 @@ def test_find_log_channel_cache_miss_and_names(h):
     assert r.find_channel() == "id-flux" and r.find_log_channel() is None and r.state["log_channel_missing"] is True
 
 
+# ---------- optional channels by kind (2026-10-05) ----------
+VMAIL = {"type": "blob", "path": "notify/2026-10-05T0901-voicemail-m1.md", "sha": "v2"}
+VMAIL_BODY = "📞 Voicemail (inbox/2026-10-05T0901Z-gmail-m1.md):\n> hello there\n(transcript, language en)"
+
+
+def test_digest_and_voicemail_go_to_their_channels_the_rest_stays(h):
+    r = h.relay({})
+    r.log_channel, r.extra = "L", {"digest": "D", "voice": "V", "actions": "A"}
+    r.blob_text = lambda sha: VMAIL_BODY if sha == "v2" else "body"
+    r.discord = lambda *a, **k: Resp(204)
+    r.outbound("C", [DAILY, FILED, QUEST, DRAFT, VMAIL])
+    assert [chan(c) for c in h.calls] == ["D", "C", "L", "C", "V"]
+
+
+def test_no_optional_channel_found_everything_stays(h):
+    r = h.relay({})
+    r.blob_text = lambda sha: VMAIL_BODY if sha == "v2" else "body"
+    r.discord = lambda *a, **k: Resp(204)
+    r.outbound("C", [DAILY, VMAIL])
+    assert [chan(c) for c in h.calls] == ["C", "C"] and r.target("digest", "C") == "C"
+
+
+def test_find_extra_channels_named_cached_renamed_and_missing(h, monkeypatch):
+    gets = []
+
+    class G:
+        def request(self, method, url, **kw):
+            gets.append(url)
+            return Resp(200, [{"type": 0, "name": nm, "id": f"id-{nm}"} for nm in ("flux", "flux-digest", "flux-actions")])
+    r = h.relay({})
+    r.s, r.guild = G(), "g"
+    assert r.find_extra_channels() == {} and gets == []          # nothing named in flux.toml: no lookup at all
+    monkeypatch.setattr(m.CFG, "digest_channel_name", "flux-digest")
+    monkeypatch.setattr(m.CFG, "voice_channel_name", "voice-notes")
+    assert r.find_extra_channels() == {"digest": "id-flux-digest"} and len(gets) == 1   # one guild read for both
+    assert r.state["channels"]["voice"] == {"name": "voice-notes", "id": None}
+    r2 = h.relay(r.state)                                        # next run: the found one is cached, the miss is retried
+    r2.s, r2.guild = G(), "g"
+    assert r2.find_extra_channel("digest") == "id-flux-digest" and len(gets) == 1
+    monkeypatch.setattr(m.CFG, "digest_channel_name", "flux-actions")   # a new name in flux.toml is looked up again
+    assert r2.find_extra_channel("digest") == "id-flux-actions" and len(gets) == 2
+
+
+def test_what_the_owner_writes_in_an_optional_channel_is_filed(h):
+    pages = {"D": [{"id": "30", "author": {"bot": True}, "type": 0}, {"id": "20", "author": {}, "type": 19}], "V": []}
+    seen, filed = [], []
+
+    def discord(method, path, **kw):
+        ch = path.split("/")[2]
+        seen.append((ch, kw["params"]))
+        return Resp(403) if ch == "A" else Resp(200, pages[ch])
+    r = h.relay({"extra_last": {"D": "10", "A": "1"}})
+    r.log_channel, r.extra = "L", {"digest": "D", "voice": "V", "actions": "A"}
+    r.discord = discord
+    r.file_guarded = lambda ch, msg: filed.append((ch, msg["id"])) or 1
+    assert r.inbound_extra("C") == 1 and filed == [("D", "20")]   # the bot's own post is skipped, the cursor passes it
+    assert r.state["extra_last"] == {"D": "30", "A": "1", "V": "0"}   # V: first sight starts at now, nothing filed
+    assert ("V", {"limit": 1}) in seen and r.state["extra_unreadable"] == ["A"]   # A: hidden from the bot, said once
+    r.extra = {"digest": "C", "voice": "L"}                       # a kind that fell back is read by inbound() itself
+    seen.clear()
+    assert r.inbound_extra("C") == 0 and seen == []
+
+
 # ---------- run guard (2026-09-29) ----------
 NOTE = {"type": "blob", "path": "notify/2026-09-29T1101-filed.md", "sha": "n1"}
 
@@ -639,6 +702,15 @@ def _notice_relay(h, monkeypatch, body, langs=("en", "fr")):
     return r, buttons
 
 
+def test_voicemail_flags_in_the_voice_channel_carry_that_channel(h, monkeypatch):
+    r, buttons = _notice_relay(h, monkeypatch, VM_NOTICE)
+    r.extra = {"voice": "V"}
+    r.outbound("C", [blob("notify/2026-01-01T1000Z-voicemail-v1.md")])
+    (_, entry), = buttons.tracked()   # the translation is a reply to the notice: it must be posted where the notice is
+    assert entry["channel"] == "V" and entry["actions"]["🇬🇧"]["channel"] == "V"
+    assert [p for mth, p in r.calls if mth == "PUT" and p.startswith("/channels/V/messages/900/reactions/")]
+
+
 def test_voicemail_notice_gets_translation_flags(h, monkeypatch):
     r, buttons = _notice_relay(h, monkeypatch, VM_NOTICE)
     r.outbound("C", [blob("notify/2026-01-01T1000Z-voicemail-v1.md")])
@@ -647,7 +719,7 @@ def test_voicemail_notice_gets_translation_flags(h, monkeypatch):
     (_, entry), = buttons.tracked()
     assert entry["module"] == "translate" and entry["message"] == "900" and list(entry["actions"]) == ["🇬🇧"]
     assert entry["actions"]["🇬🇧"] == {"code": "en", "language": "English", "note": "inbox/2026-01-01T1000Z-gmail-v1.md",
-                                        "transcript": "inbox/2026-01-01T1000Z-gmail-v1.md", "voice_message": "900",
+                                        "transcript": "inbox/2026-01-01T1000Z-gmail-v1.md", "voice_message": "900", "channel": "C",
                                         "translation": "raw/translations/2026-01-01T1000Z-gmail-v1-en.md"}
 
 
