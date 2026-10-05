@@ -117,6 +117,12 @@ class GitHub:
         r.raise_for_status()
         return r.json()
 
+    def delete(self, path, sha, message):
+        """Remove a file, compare-and-swap style like put() (409 when it moved meanwhile, 404 when already gone)."""
+        body = {"message": message, "branch": self.branch, "sha": sha, "committer": self.committer}
+        r = self.s.delete(self._contents_url(path), headers=self.h, json=body, timeout=60)
+        r.raise_for_status()
+
     # ---------- git data ----------
     def ref_sha(self):
         """(tip sha, changed?) of the branch, via a conditional GET: 304 = same as last time (free)."""

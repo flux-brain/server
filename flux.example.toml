@@ -24,6 +24,10 @@ post_run_quiet_s = 120             # no new start this long after a run ends (a 
 reconcile_coalesce_s = 300         # a start made only of memory reconcile notes waits this long after the latest one,
 reconcile_max_s = 900              # and at most this long after the first; lower both for faster pages, more runs
 author = "Claude"                  # git author name of the routines' commits (the relay audits them)
+relay_marker = false               # true: the relay writes .run/active itself before it starts a run and names its
+                                   # run id in the start message, so the run no longer pushes a marker first. Turn it
+                                   # on only once the vault's CLAUDE.md (Run protocol step 4) and the vault-inbox
+                                   # prompt are the vault-template versions of 2026-10-05 or later.
 
 [capture]
 settle_s = 60                      # an Obsidian note must stay unchanged this long before it counts
