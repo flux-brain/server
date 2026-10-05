@@ -4,6 +4,10 @@ twenty keys were scattered through an 800-line module):
 
   channel_id, log_channel_id   Discord channel ids once found (a rename in Discord changes nothing)
   log_channel_missing          True once the "no log channel" line was logged, so it is not logged every tick
+  channels                     {kind: {name, id}} of the optional digest / actions / voice channels (id None = looked
+                               for under that name and not found, logged once); a new name in flux.toml is looked up again
+  extra_last                   {channel id: last message id read} in those channels (inbound_extra)
+  extra_unreadable             ids of those channels the bot could not read, so the log line is written once
   last_message_id              the newest Discord message filed; inbound reads `after` it (absent = not initialised)
   message_failures             {message id: attempts} for the head of the queue only (inbound, fix 2)
   failures                     consecutive failed ticks (main: one ops alert at FAIL_ALERT_AFTER)

@@ -110,6 +110,21 @@ class Bot:
                 return c["id"]
         raise RuntimeError(f"channel #{names[0]} not visible to the bot")
 
+    def actions_channel(self, cache):
+        """Channel for a module's post with buttons: `[discord] actions_channel` when flux.toml names one and the bot
+        sees it (cached in `cache` with its name, so a new name is looked up again), else the conversation channel.
+        Looked up again on each post while it is missing, so the posts move there once the channel exists."""
+        name = CFG.actions_channel_name
+        if name:
+            rec = cache.get("actions_channel") or {}
+            if rec.get("name") == name and rec.get("id"):
+                return rec["id"]
+            for c in self.call("GET", f"/guilds/{CFG.discord_guild}/channels"):
+                if c["type"] == 0 and c["name"] == name:
+                    cache["actions_channel"] = {"name": name, "id": c["id"]}
+                    return c["id"]
+        return self.channel_id(CFG.channel_names, cache)
+
     def post(self, channel, content):
         # flags=4 (SUPPRESS_EMBEDS, 2026-09-30): module posts quote outside content (email snippets, Drive names),
         # so Discord must not unfurl their links: its preview bot would fetch whatever URL a sender pasted.
