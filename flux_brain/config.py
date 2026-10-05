@@ -74,6 +74,9 @@ class Config:
         # name of the routines' commits, which the relay audits against the run marker
         self.post_run_quiet = int(g("routine", "post_run_quiet_s", 120))
         self.routine_author = g("routine", "author", "Claude")
+        # the relay writes the run marker itself before it starts a run (2026-10-05); off by default: the vault's
+        # CLAUDE.md and the vault-inbox prompt must know about it first (vault-template of the same date)
+        self.relay_marker = bool(g("routine", "relay_marker", False))
         # capture
         self.phone_settle = int(g("capture", "settle_s", 60))
         self.max_attachment_mb = int(g("capture", "max_attachment_mb", 20))

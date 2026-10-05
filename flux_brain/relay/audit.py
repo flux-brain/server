@@ -16,7 +16,9 @@ under a burst of captures (5 of 45 runs on 2026-09-29), so the relay now checks 
     the post-run quiet window (`quiet_until`), so no start goes out while a run is still pushing.
 
 Marker presence is followed commit by commit from the last audited tip: only the routines touch `.run/active`, so
-other commits (relay captures, Drive watch, memory mirror) are not fetched. Never raises: a failed audit only skips
+other commits (relay captures, Drive watch, memory mirror) are not fetched. The one exception is the relay's own
+marker (`[routine] relay_marker`, 2026-10-05): it is written and, when a start fails, taken back by owner-authored
+commits, recognised by their message alone, so a run's commits are not mistaken for late ones. Never raises: a failed audit only skips
 the check; a vanished base (a force push) restarts it from the current tip.
 """
 import time
@@ -26,7 +28,7 @@ import requests
 from ..config import CFG
 from ..lib.common import log
 from . import state
-from .fire import RUN_MARKER
+from .fire import RUN_MARKER, MARKER_START_MSG, MARKER_UNDO_MSG
 
 
 class AuditMixin:
@@ -54,6 +56,11 @@ class AuditMixin:
             present, late, same_push, removed_here = a["marker"], [], [], False
             for c in commits:
                 if (c.get("commit", {}).get("author") or {}).get("name") != CFG.routine_author:
+                    first = (c.get("commit", {}).get("message") or "").split("\n", 1)[0]
+                    if first == MARKER_START_MSG:      # the relay wrote the marker for the run it then started
+                        present = True
+                    elif first == MARKER_UNDO_MSG:     # and took it back: that start never happened
+                        present = False
                     continue
                 touch = [f for f in self.ghc.commit_files(c["sha"]) if f.get("filename") == RUN_MARKER]
                 if touch:

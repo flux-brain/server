@@ -1,5 +1,6 @@
 """Starting the vault-inbox routine: the API trigger, the run marker, the start-message manifest and its page hints."""
 import re
+import secrets
 import time
 from datetime import datetime, timezone
 
@@ -20,6 +21,14 @@ from . import state
 # fired AND scheduled runs, which replaced the clock-based quiet windows around the hour. A marker older than
 # CFG.marker_fresh is a crashed run's leftover and is ignored (runs overwrite it too).
 RUN_MARKER = ".run/active"
+# The relay writes the marker itself (2026-10-05, `[routine] relay_marker`). Until then every run pushed its own, and
+# that push was the weak point: a run that read its captures first left the relay blind (it started a second run after
+# the ceiling), and a marker push rejected because the branch had moved cost up to two minutes, once a whole run parked
+# on a permission prompt. Now the marker is on the branch BEFORE the start is sent, so the run's clone already holds
+# it; the start message carries its run id, which is how the run tells its own marker from another run's. Scheduled
+# runs (nobody starts them here) still write their own, and a run still removes the marker in its last commit.
+MARKER_START_MSG = "run: start"          # the same message a run uses; the audit tells the two apart by author
+MARKER_UNDO_MSG = "run: start undone"    # the start failed after the marker was written: the relay took it back
 MANIFEST_MAX = 20  # inbox paths listed in the start message (P8)
 
 
@@ -88,6 +97,12 @@ class FireMixin:
         elif st.get("obsidian_fire_at"):
             return  # no tree to tell notes apart: keep the conservative hold
 
+        run_id = None
+        if CFG.relay_marker:
+            run_id = self.place_marker(now)
+            if not run_id:
+                return  # another run's marker is there after all, or GitHub refused: a later tick starts the run
+
         headers = {"Authorization": f"Bearer {CFG.fire_token}", "anthropic-version": "2023-06-01",
                    "anthropic-beta": "experimental-cc-routine-2026-04-01", "Content-Type": "application/json"}
         body = {"text": "The Discord relay just filed new capture(s) in inbox/. Run the normal inbox run."}
@@ -99,13 +114,20 @@ class FireMixin:
             if len(waiting) > MANIFEST_MAX:
                 body["text"] += f"; and {len(waiting) - MANIFEST_MAX} more"
             body["text"] += "."
+        if run_id:
+            # read by the vault-inbox prompt (step 4) and the vault's CLAUDE.md (Run protocol step 4)
+            body["text"] += (f" Run marker: the relay already wrote `{RUN_MARKER}` for this run (run id `{run_id}`). "
+                             "Do not write or push a run marker.")
         try:
             r = requests.post(CFG.fire_url, headers=headers, json=body, timeout=30)
         except requests.RequestException as exc:
+            self.take_back_marker(run_id)
             st["fire_not_before"] = now + CFG.fire_min_interval
             log(f"fire: network error ({exc.__class__.__name__}), will retry in {CFG.fire_min_interval}s")
             state.save_state(st)
             return
+        if not r.ok:
+            self.take_back_marker(run_id)  # no run was started: its marker must not hold the next start or a scheduled run
         if r.ok:
             st.update(fire_pending=False, fire_ceiling_until=now + CFG.fire_min_interval, fire_alerted=False,
                       fired_inbox=[p for p in (waiting or []) if p not in settling])
@@ -115,7 +137,7 @@ class FireMixin:
             # not see fire_pending=True and start a duplicate run (code review of b08ec02, 2026-09-16).
             state.save_state(st)
             url = r.json().get('claude_code_session_url')
-            log(f"fired vault-inbox: {url or '?'}")
+            log(f"fired vault-inbox: {url or '?'}" + (f" (run marker written, run {run_id})" if run_id else ""))
             # Post the run link to Discord (2026-09-16, the owner: "see Claude step by step work in Discord"): the
             # cloud run cannot reach Discord itself, so the live step-by-step view is the claude.ai page this
             # links to. <...> suppresses Discord's link preview. self.post sends it once (no 5xx retries, see its
@@ -149,6 +171,53 @@ class FireMixin:
                 st["fire_alerted"] = True
         state.save_state(st)
 
+    def place_marker(self, now):
+        """Write `.run/active` for the run about to be started and return its run id; None when no start should be
+        sent now. Read fresh, not from this tick's tree: a scheduled run may have pushed its marker since.
+        A stale marker (a crashed run's leftover) is overwritten, as a run would do. Never raises."""
+        st = self.state
+        run_id = secrets.token_hex(4)
+        text = f"started: {datetime.fromtimestamp(now, timezone.utc):%Y-%m-%dT%H:%M:%SZ}\nrun: {run_id}\nby: relay\n"
+        try:
+            cur, sha = self.ghc.get(RUN_MARKER)
+            if cur is not None:
+                if now - self.marker_started(cur, now) < CFG.marker_fresh:
+                    return None  # a run began since the tree was read: the next tick sees its marker
+                self.ghc.put(RUN_MARKER, text, MARKER_START_MSG, sha=sha)
+            elif not self.ghc.put_file(RUN_MARKER, text.encode(), MARKER_START_MSG):
+                # there after all: a run's own marker won the race, or our write was retried after a lost answer
+                cur, _ = self.ghc.get(RUN_MARKER)
+                if not cur or f"run: {run_id}" not in cur:
+                    return None
+            return run_id
+        except Exception as exc:  # noqa: BLE001 - a marker problem must never stop filing or posting
+            log(f"run marker not written ({exc.__class__.__name__}), start postponed")
+            self.take_back_marker(run_id)  # the write may have landed although its answer was lost
+            st["fire_not_before"] = now + 60
+            state.save_state(st)
+            return None
+
+    def take_back_marker(self, run_id):
+        """Remove the marker the relay wrote for a start that did not happen. Only its own (the run id must match): a
+        marker left behind would hold every start, and end every scheduled run, until it went stale. Never raises."""
+        if not run_id:
+            return
+        try:
+            cur, sha = self.ghc.get(RUN_MARKER)
+            if cur and f"run: {run_id}" in cur:
+                self.ghc.delete(RUN_MARKER, sha, MARKER_UNDO_MSG)
+                log(f"run marker taken back (run {run_id}): the start did not go through")
+        except Exception as exc:  # noqa: BLE001
+            log(f"run marker NOT taken back (run {run_id}, {exc.__class__.__name__}): starts held until it goes stale")
+
+    @staticmethod
+    def marker_started(text, default):
+        """The `started:` time of a marker as a timestamp, `default` when it cannot be read."""
+        mt = re.search(r"started:\s*(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})Z", text or "")
+        if not mt:
+            return default
+        return datetime.strptime(mt.group(1), "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc).timestamp()
+
     def track_run_marker(self, tree, now):
         """Follow the routine's `.run/active` marker (round 2 P2a). Sets state `run_active` while a fresh marker exists;
         when it goes away, clears the start ceiling and re-arms a start ONCE per capture that our last start listed and
@@ -160,11 +229,8 @@ class FireMixin:
             if ent:
                 mk = st.get("marker") or {}
                 if mk.get("sha") != ent["sha"]:
-                    started = None
                     try:
-                        mt = re.search(r"started:\s*(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})Z", self.blob_text(ent["sha"]))
-                        if mt:
-                            started = datetime.strptime(mt.group(1), "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc).timestamp()
+                        started = self.marker_started(self.blob_text(ent["sha"]), None)
                     except Exception:  # noqa: BLE001 - unreadable marker: age it from first sight
                         started = None
                     mk = st["marker"] = {"sha": ent["sha"], "started": started or now}
