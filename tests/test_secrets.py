@@ -2,7 +2,7 @@
 Samples are BUILT at run time by concatenation so the repository never carries a token-shaped literal."""
 import pytest
 
-from flux_brain.lib.secrets import SECRET_PATTERNS
+from flux_brain.lib.secrets import SECRET_PATTERNS, redact_link_tokens
 
 A, D = "A" * 40, "1" * 20
 SAMPLES = {
@@ -56,3 +56,39 @@ def test_capability_url_is_redacted_whole():
     # the pasted PowerShell line from an email: the URL goes, the command around it stays readable
     line = "PS> iwr https://" + "files.example/p/" + ("0f" * 16) + "/install.ps1 -OutFile x.ps1"
     assert SECRET_PATTERNS.sub("[REDACTED]", line) == "PS> iwr [REDACTED] -OutFile x.ps1"
+
+
+# ---------- sign-in links in filed email: the token goes, the link stays ----------
+
+UUID = "11111111-2222-4333-" + "8444-555555555555"
+
+
+def test_sign_in_link_loses_its_token_and_keeps_its_address():
+    line = "View and sign: https://app.example/legal-doc/signing?login_request_token=" + UUID + "&doc_id=12345 thanks"
+    text, n = redact_link_tokens(line)
+    assert n == 1 and UUID not in text
+    assert text == "View and sign: https://app.example/legal-doc/signing?login_request_token=[REDACTED]&doc_id=12345 thanks"
+
+
+@pytest.mark.parametrize("param", ["token", "access_token", "auth", "api_key", "apikey", "sig", "signature", "code",
+                                   "magic", "session", "otp", "reset-password", "X-Amz-Signature"])
+def test_credential_named_parameters_are_redacted(param):
+    text, n = redact_link_tokens(f"https://x.example/a?lang=en&{param}=abcDEF123456ghiJKL&next=1")
+    assert n == 1 and "abcDEF123456ghiJKL" not in text and "lang=en" in text and "next=1" in text
+
+
+@pytest.mark.parametrize("line", [
+    "https://x.example/search?keywords=long-enough-to-match-the-length",   # the name only CONTAINS a credential word
+    "https://x.example/a?code=FR&page=12",                                 # short values
+    "https://x.example/a?postcode=06400&lang=fr",
+    "https://x.example/a?utm_source=newsletter-october-2026&utm_medium=email",
+    "https://github.com/acme/widgets/commit/0123456789abcdef0123456789abcdef01234567",
+    "the token=abcDEF123456ghiJKL in prose is not a link parameter",
+])
+def test_ordinary_links_and_prose_are_left_alone(line):
+    assert redact_link_tokens(line) == (line, 0)
+
+
+def test_link_tokens_are_not_part_of_the_refusal_patterns():
+    # the relay refuses a capture matching SECRET_PATTERNS: a pasted link with token= must still be filed
+    assert SECRET_PATTERNS.search("https://x.example/a?token=abcDEF123456ghiJKL") is None

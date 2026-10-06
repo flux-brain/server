@@ -47,7 +47,7 @@ import requests
 # instantiate its class without __init__ to borrow the GitHub/Drive methods and the converters.
 from .config import CFG  # noqa: E402
 from .lib.common import log, ops_alert  # noqa: E402  the same optional ops webhook as the relay
-from .lib.secrets import SECRET_PATTERNS  # noqa: E402
+from .lib.secrets import SECRET_PATTERNS, redact_link_tokens  # noqa: E402
 from .lib.state import load_json, save_json  # noqa: E402
 from .lib.github import GitHub, session  # noqa: E402
 from .lib.drive import Drive  # noqa: E402
@@ -99,7 +99,9 @@ def safe(name):
 
 def redact(text):
     text, n = SECRET_PATTERNS.subn("[REDACTED]", text or "")
-    return text, n
+    # A sign-in link keeps its address and loses its token: the email is filed, the credential is not (lib.secrets).
+    text, m = redact_link_tokens(text)
+    return text, n + m
 
 
 def extract_with_retry(blob, mime, name):

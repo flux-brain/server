@@ -18,3 +18,19 @@ SECRET_PATTERNS = re.compile(
     # config or download link) IS the credential. Exactly 32 hex, so git commit links (40) and digests (64) pass.
     r"|https?://[^\s/]+/(?:[^\s/]+/)*(?<![0-9A-Fa-f])[0-9A-Fa-f]{32}(?![0-9A-Fa-f])(?:/[^\s<>\"')\]]*)?"
 )
+
+# Sign-in links in filed email (2026-10-06). A "view and sign" or "log in" email carries its credential as a query
+# parameter of an ordinary link (`...?login_request_token=<uuid>&doc_id=1`), which no structured pattern above matches,
+# so the token went into the repository with the email. Only the VALUE is replaced, and only for a parameter whose
+# name ENDS with a credential word and whose value is at least 12 characters: the link stays readable, short
+# values (a language code, a page number, a postcode) and names like `keywords=` are left alone. Kept apart from
+# SECRET_PATTERNS on purpose: the relay REFUSES a capture that matches SECRET_PATTERNS, and a link pasted in the
+# capture channel must not be refused for carrying a `token=`. The Gmail module applies it to what it files.
+LINK_TOKENS = re.compile(
+    r"(?i)(?<=[?&;])((?:[\w.-]*[_.-])?(?:token|secret|passwd|password|otp|magic|ticket|signature|sig|auth|session"
+    r"|nonce|apikey|key|code)=)[^&#\s<>\"')\]]{12,}")
+
+
+def redact_link_tokens(text):
+    """(text with the value of every credential-named link parameter replaced, number replaced)."""
+    return LINK_TOKENS.subn(r"\1[REDACTED]", text or "")
