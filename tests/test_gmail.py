@@ -499,3 +499,12 @@ def test_voicemail_without_translate_to_or_without_speech_asks_for_no_translatio
     r2, puts2, _ = _voicemail_relay(monkeypatch, heard_text="")
     monkeypatch.setattr(gr.CFG, "translate_to", ["en", "fr"])
     assert r2.run() == 1 and "translations:" not in next(d for p, d in puts2 if p.startswith("inbox/"))
+
+
+# ---------- sign-in links (2026-10-06): the filed text keeps the link and loses its token ----------
+
+def test_redact_strips_a_sign_in_token_and_counts_it():
+    token = "11111111-2222-4333-" + "8444-555555555555"
+    text, n = gr.redact(f"View and sign documents: https://app.example/signing?login_request_token={token}&doc_id=7")
+    assert n == 1 and token not in text and "https://app.example/signing?login_request_token=[REDACTED]&doc_id=7" in text
+    assert gr.redact("Plain words, and a link https://x.example/a?page=2") == ("Plain words, and a link https://x.example/a?page=2", 0)
