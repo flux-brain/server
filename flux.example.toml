@@ -44,6 +44,11 @@ whisper_beam = 1                   # 5 searches wider: a little slower, fewer wr
 whisper_prompt = ""                # names you say often, e.g. "Anna, Northwind, the Lisbon flat": spelled right more often
 echo_transcripts = true            # reply to a voice note with what was heard, so a misheard word can be corrected
 translate_to = []                  # e.g. ["en", "fr"]: flag buttons under that reply; a tap posts the translation Claude prepared
+web_links = "off"                  # "text": a web page linked in a message is fetched when the message is filed and
+                                   # its text stored in raw/attachments/ (the routine cannot open links); the word
+                                   # -text in a message keeps its links as plain URLs. Only public http(s) addresses
+                                   # on the default ports are requested, pages up to 10 MB. Keep the channel private:
+                                   # whoever can post there can make your server fetch a page.
 
 [paths]
 home = "/var/lib/flux"             # state, tree cache, logs; override with $FLUX_HOME
