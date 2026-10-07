@@ -101,6 +101,11 @@ class Config:
         # flag buttons under a transcript echo: the languages the owner can ask a translation into (codes from
         # relay/inbound.py TRANSLATE_LANGS, e.g. ["en", "fr"]); empty = no buttons
         self.translate_to = [str(c).lower() for c in (g("capture", "translate_to", []) or [])]
+        # Web links in a message (2026-10-07): "off" (default) leaves them as plain URLs; "text" fetches each linked
+        # page when the message is filed and stores its text in raw/attachments/, because the routine that files the
+        # capture has no network access. `-text` in a message keeps the links as plain URLs. See lib/web.py for what
+        # the relay refuses to request.
+        self.web_links = str(g("capture", "web_links", "off")).lower()
         # paths
         self.state_dir = self.home / "state"
         self.log_dir = self.home / "logs"
