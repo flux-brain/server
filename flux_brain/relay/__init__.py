@@ -33,6 +33,7 @@ from ..lib.common import log, ops_alert
 from ..lib.captures import RELAY_NOTE, HOST_NOTE  # noqa: F401  re-exported: the tests and the docs refer to them here
 from ..lib.github import GitHub, session
 from ..lib.drive import Drive
+from ..lib import web
 from . import state, discord, inbound, watch, fire, outbound, reactions, audit  # noqa: F401  submodules, reachable as relay.<name>
 from .state import state_file, load_state, save_state, prune_posted  # noqa: F401
 from .discord import DiscordMixin, DISCORD  # noqa: F401
@@ -85,6 +86,10 @@ class Relay(DiscordMixin, InboundMixin, WatchMixin, FireMixin, OutboundMixin, Re
 
     def drive_file_bytes(self, file_id, export_mime=None):
         return self.drive.export(file_id, export_mime) if export_mime else self.drive.download(file_id)
+
+    # Linked web pages ([capture] web_links, 2026-10-07): a wrapper for the same reason.
+    def fetch_web(self, url):
+        return web.fetch(url, min(web.WEB_MAX_BYTES, CFG.max_attachment_bytes))
 
 
 def main():

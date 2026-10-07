@@ -76,6 +76,15 @@ in `#flux` and watch it react within 15 seconds.
      Drive. This needs a token that can READ the linked files (scope `drive.readonly` or `drive`): the
      `drive.file` token of step 2 sees only files this app created, so every lookup would answer 404 and
      the line would say "not accessible". Point `[drive] token_file` at such a token, or leave `links` off.
+- **Web links** (the text of a web page linked in a message; needs no account): set `[capture] web_links = "text"`
+  and restart the unit. Post a link in `#flux`: the capture gets a `## Links` line with the page's title and a link to
+  its text in `raw/attachments/`, fetched once when the message is filed (the page may change later; the copy does
+  not). The routine has no network access, so without this a bare link is filed by its address alone. The word
+  `-text` in a message keeps its links as plain URLs. The request leaves from YOUR server, so the relay asks only
+  for public http(s) addresses on the default ports, checks every redirect the same way, reads at most 10 MB, and
+  never retries: a page that refuses automated readers, or an address on your own network, gives a line reading
+  `not fetched (...)` and the note is filed anyway. Keep the capture channel private: whoever can post in it can
+  make your server fetch a page. A linked PDF is converted like an attached one.
 - **Drive watch** (new files in a few chosen Drive folders become captures, e.g. the folder where Google Meet saves
   Gemini's meeting notes): needs the Drive token of step 5 above, one that can READ those folders.
   1. List the folders in `flux.toml` `[drive_watch] folders` (sub-folders are included; add `project = "<page slug>"`

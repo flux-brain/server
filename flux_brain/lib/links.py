@@ -9,8 +9,9 @@ repository syncs to every device and no longer follows later edits to the origin
 copied by default instead, and the word `-text` asks for the details only.
 """
 import re
+import urllib.parse
 
-__all__ = ["drive_links", "wants_text", "refuses_text", "text_wanted", "MAX_LINKS", "kind_label", "EXPORTS"]
+__all__ = ["drive_links", "web_links", "wants_text", "refuses_text", "text_wanted", "MAX_LINKS", "kind_label", "EXPORTS"]
 
 MAX_LINKS = 5                      # links looked up per message; the rest stay plain URLs in the message text
 
@@ -53,6 +54,27 @@ def drive_links(text):
         if fid not in seen:
             seen.add(fid)
             out.append((url, fid, folder))
+    return out[:MAX_LINKS]
+
+
+# Web pages ([capture] web_links, 2026-10-07): every other http(s) address in the message. Google Docs and Drive
+# links are drive_links' job (they need the Drive token), and Discord's own file hosts carry the message's
+# attachments, which the relay already stores.
+_URL = re.compile(r"https?://[^\s<>\"'`\\]+")
+_NOT_WEB = ("docs.google.com", "drive.google.com", "cdn.discordapp.com", "media.discordapp.net")
+
+
+def web_links(text):
+    """[url] of the web pages a message links, in order of appearance, each once, at most MAX_LINKS."""
+    out = []
+    for m in _URL.finditer(text or ""):
+        url = m.group(0).rstrip(".,;:!?*_~")
+        # a closing bracket with no opening one inside the address closes the sentence or a Markdown link
+        while (url.endswith(")") and url.count(")") > url.count("(")) or (url.endswith("]") and url.count("]") > url.count("[")):
+            url = url[:-1].rstrip(".,;:!?*_~")
+        host = (urllib.parse.urlsplit(url).hostname or "").lower()
+        if host and host not in _NOT_WEB and url not in out:
+            out.append(url)
     return out[:MAX_LINKS]
 
 

@@ -12,7 +12,8 @@ What it does, every 15 seconds:
   transcript, so you can correct a misheard word with a reply (`[capture] echo_transcripts`); with
   `[capture] translate_to`, flag buttons under that reply post a translation Claude prepared when it filed the note. Optionally, a Google Docs or Drive link
   in a message is looked up (name, type, folder), and its text copied in too (`+text`, or by default with
-  `links = "text"`, `-text` to opt out).
+  `links = "text"`, `-text` to opt out). With `[capture] web_links = "text"`, a web page linked in a message is
+  fetched and its text stored the same way, because the routine that files the capture cannot open links.
 - **Start the run:** as soon as a capture is filed, the relay starts the `vault-inbox` routine through its
   API trigger and posts the run link, so you can watch Claude work.
 - **Outbound:** answers, drafts, questions (with an @mention) and digests are posted to `#flux`; run
@@ -45,6 +46,7 @@ those two files; the code contains none.
 | Attachment text extraction | core | poppler, tesseract, optional faster-whisper |
 | Drive attachments | shipped (`flux-drive-auth`) | Google Cloud OAuth client, a folder |
 | Drive link details (`[drive] links`) | shipped, off by default | a Drive token that can read the linked files (drive.readonly) |
+| Web page text (`[capture] web_links`) | shipped, off by default | outbound http(s) from the server; a private capture channel |
 | Gmail feed | shipped (`flux-gmail`, `flux-gmail-auth`) | Gmail API, scope gmail.modify |
 | Voicemail emails | shipped (part of `flux-gmail`, `[gmail] voicemail_from`), off by default | the Gmail token; transcribed, posted, archived |
 | Google Tasks checklists | shipped (`flux-tasks`, `flux-tasks-auth`) | Tasks API, scope tasks |

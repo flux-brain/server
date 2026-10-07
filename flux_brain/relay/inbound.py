@@ -10,7 +10,8 @@ from ..lib import buttons
 from ..lib.common import log
 from ..lib.secrets import SECRET_PATTERNS
 from ..lib.extract import extract_text, attachment_text_file, is_audio   # (tests stub extract_text on this module)
-from ..lib.links import drive_links, text_wanted
+from ..lib.links import drive_links, web_links, text_wanted, refuses_text
+from ..lib import web
 from ..lib.translate import TRANSLATE_LANGS, SURE_LANGUAGE, HEARD_LANGUAGE, flags_for  # noqa: F401  (shared with the Gmail module since the voicemail flags)
 from ..lib.linked import details_line, text_file
 from . import state
@@ -317,6 +318,34 @@ class InboundMixin:
             self.put_file(path, body.encode(), f"inbox: text of linked file {meta.get('name') or fid}")
         return entry + suffix
 
+    def web_link_entry(self, m, url, stamp, ts):
+        """One `## Links` line for a web page linked in the message ([capture] web_links, 2026-10-07): the page is
+        fetched now, its text goes to `raw/attachments/` like a linked Drive file's, and the line links both. The
+        routine cannot open a link, so without this a page is filed by its address alone.
+
+        Never strict, unlike an attachment or a Drive export: nobody asked for this page by name, sites refuse
+        automated readers often, and a note must not wait three ticks for one. Whatever fails, the line says why and
+        the link stays in the message. The page is untrusted content: its text is fenced and secret-redacted by
+        attachment_text_file, and its title is stripped of what could break the Markdown line."""
+        try:
+            final, ctype, data = self.fetch_web(url)
+            title, text, method = web.page_text(data, ctype, final, extract_text)
+            if not method:
+                return f"- {url} (web link, {ctype or 'unknown type'}): no text (type not converted); only the link is kept"
+            name = " ".join(re.sub(r"[\[\]|`<>]+", " ", title).split())[:120] or "page"
+            host = urllib.parse.urlsplit(final).hostname or "page"
+            safe = re.sub(r"[^A-Za-z0-9._-]", "_", f"{host}-{name}")[:80]
+            path = f"raw/attachments/{stamp}-{m['id']}-link-{safe}.md"
+            body = attachment_text_file(
+                name, final, ctype or "text/html", max(1, len(data) // 1024), method, text, m["id"],
+                f"{ts:%Y-%m-%dT%H:%MZ}",
+                origin="Text of a web page linked in the message, fetched by the relay when the message was filed; "
+                       "the page may have changed since.")
+            self.put_file(path, body.encode(), f"inbox: text of linked page on {host}")
+            return f"- [{name}]({final}) (web page on {host}, fetched {ts:%Y-%m-%d %H:%M} UTC, text: [[{path}|{name} (text)]])"
+        except Exception as exc:  # noqa: BLE001 - refused address, HTTP error, timeout, conversion or GitHub failure
+            return f"- {url}: not fetched ({web.why(exc)}); only the link is kept"
+
     def file_message(self, channel, m, lenient=False):
         """File one Discord message as an inbox capture. `lenient` (fix 2, set by file_guarded on the last attempt):
         an attachment that fails is listed as not fetched instead of failing the message."""
@@ -352,6 +381,11 @@ class InboundMixin:
                 self.seen(channel, m["id"])   # lookups (and a +text export) take a moment
                 want = text_wanted(CFG.drive_links, text)
                 link_lines = [self.link_entry(m, url, fid, folder, want, stamp, ts, lenient) for url, fid, folder in links]
+        if CFG.web_links == "text" and not refuses_text(text):
+            pages = web_links(text)
+            if pages:
+                self.seen(channel, m["id"])   # a fetch takes a moment
+                link_lines += [self.web_link_entry(m, url, stamp, ts) for url in pages]
         refs = ""
         if m.get("referenced_message"):  # a reply, e.g. answering a question Claude posted
             refs = "\nin_reply_to: |\n  " + m["referenced_message"].get("content", "")[:300].replace("\n", "\n  ")
