@@ -24,6 +24,11 @@ counts the files the OWNER changed per folder (the feed says who: `lastModifying
 `suggest_max`, never one in `never`) are posted in the capture channel with a ✅ button (flux_brain.lib.buttons). A
 tap adds the folder to `extra_folders` in the state file, watched from the next run on; flux.toml is never edited.
 
+Starred folders (2026-10-10, `starred = true`): the folders the owner has STARRED in Drive are watched too, with their
+sub-folders. The list is read from Drive at the start of every run, so a star set on a phone starts the filing and
+removing it stops it, with no file to edit on the server; `folders` may then stay empty. A file queued under a folder
+that is no longer watched (the star was removed, a folder left the list) is dropped, not filed.
+
 Config (`flux.toml`):
     [modules] drive_watch = true
     [drive_watch]
@@ -32,6 +37,7 @@ Config (`flux.toml`):
     owned_only = true        # My Drive files must be the owner's; shared drives rely on the folder list
     text = true              # copy the text (false = details only)
     max_per_run = 10
+    starred = false          # true: also watch the folders starred in Drive (list read at every run)
 
 Token: `[drive] token_file`, which must be able to READ those folders (drive.readonly or drive), not the drive.file
 consent of flux-drive-auth. DRIVE_WATCH_DRY=1: nothing is written to GitHub, the captures are printed instead; the
@@ -57,6 +63,8 @@ MAX_DEPTH = 20                      # parent hops before giving up (a Drive tree
 FOLDER = "application/vnd.google-apps.folder"
 CHANGE_FIELDS = ("nextPageToken,newStartPageToken,changes(fileId,removed,file(id,name,mimeType,modifiedTime,parents,"
                  "driveId,trashed,ownedByMe,lastModifyingUser(me)))")
+STARRED_Q = f"starred = true and mimeType = '{FOLDER}' and trashed = false"
+MAX_STARRED_PAGES = 5               # 500 starred folders: far past any real list, and a bound on one run's requests
 ADD = "✅"
 DRY = os.environ.get("DRIVE_WATCH_DRY") == "1"
 
@@ -91,6 +99,28 @@ class Watcher:
             f = self.get(f"files/{fid}", {"supportsAllDrives": "true", "fields": "id,name,parents,driveId"})
             self.st["parents"][fid] = [f.get("name", ""), (f.get("parents") or [""])[0], f.get("driveId", "")]
         return self.st["parents"][fid]
+
+    def add_starred(self):
+        """Add the folders the owner starred in Drive to the watched set, for this run only (nothing is kept in the
+        state: the star is the switch). A folder already listed in flux.toml keeps its entry, hence its project.
+        Returns the number added."""
+        n, token = 0, None
+        for _ in range(MAX_STARRED_PAGES):
+            params = {"q": STARRED_Q, "corpora": "allDrives", "supportsAllDrives": "true",
+                      "includeItemsFromAllDrives": "true", "pageSize": 100,
+                      "fields": "nextPageToken,files(id,name,parents,driveId)"}
+            if token:
+                params["pageToken"] = token
+            page = self.get("files", params)
+            for f in page.get("files", []):
+                self.st["parents"][f["id"]] = [f.get("name", ""), (f.get("parents") or [""])[0], f.get("driveId", "")]
+                if f["id"] not in self.folders:
+                    self.folders[f["id"]] = {"id": f["id"], "starred": True}
+                    n += 1
+            token = page.get("nextPageToken")
+            if not token:
+                break
+        return n
 
     def watched_drive_ids(self):
         """The drive ids the watched folders live on ("" = My Drive), so most changes are dropped without a lookup."""
@@ -150,6 +180,10 @@ class Watcher:
         for fid in list(self.st["pending"]):
             if n >= CFG.drive_watch_max_per_run:
                 break
+            if self.st["pending"][fid].get("folder") not in self.folders:   # star removed, folder taken off the list
+                self.st["pending"].pop(fid)
+                log(f"drive watch: dropped {fid}, its folder is no longer watched")
+                continue
             try:
                 meta = self.d.metadata(fid)
             except Exception as exc:  # noqa: BLE001
@@ -289,12 +323,14 @@ def _ts(iso):
 def main():
     if not CFG.mod_drive_watch:
         raise SystemExit("flux: the Drive watch module is off ([modules] drive_watch = false in flux.toml); nothing to do")
-    if not CFG.drive_watch_folders:
-        raise SystemExit("flux: [drive_watch] folders is empty in flux.toml; nothing to watch")
+    if not CFG.drive_watch_folders and not CFG.drive_watch_starred:
+        raise SystemExit("flux: [drive_watch] folders is empty and starred is off in flux.toml; nothing to watch")
     st = load_json(state_file(), {"failures": 0})
     try:
         s = session()
         w = Watcher(Drive(s, folder=CFG.drive_folder_id or "unused"), None if DRY else GitHub(), st)
+        if CFG.drive_watch_starred:
+            w.add_starred()
         w.act()
         q = w.scan()
         n = w.settle_and_file()

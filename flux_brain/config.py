@@ -138,6 +138,7 @@ class Config:
         self.drive_watch_owned_only = bool(g("drive_watch", "owned_only", True))
         self.drive_watch_text = bool(g("drive_watch", "text", True))
         self.drive_watch_max_per_run = int(g("drive_watch", "max_per_run", 10))
+        self.drive_watch_starred = bool(g("drive_watch", "starred", False))       # also watch the folders starred in Drive
         self.drive_watch_suggest = bool(g("drive_watch", "suggest", False))       # weekly "watch this folder?" posts
         self.drive_watch_suggest_every = int(g("drive_watch", "suggest_every_days", 7))
         self.drive_watch_suggest_min = int(g("drive_watch", "suggest_min_files", 3))
