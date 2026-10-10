@@ -115,11 +115,12 @@ settle_s = 600                     # file a new file once it has gone this long 
 owned_only = true                  # My Drive files must be yours; on a shared drive the folder list is the filter
 text = true                        # copy the text into raw/attachments/ (false = details only)
 max_per_run = 10
+starred = false                    # true: also watch the folders you starred in Drive (read at every run; folders may stay empty)
 suggest = false                    # weekly: post the folders you changed most (outside the watched ones) with a ✅ to watch
 suggest_every_days = 7
 suggest_min_files = 3
 suggest_max = 3
-never = []                         # folder ids never suggested, e.g. the attachment folder of the Drive module
+never = []                         # folder ids never suggested nor filed, sub-folders included, even inside a watched folder
 
 [followups]                        # when modules.followups = true; uses [gmail] token_file
 days = 4                           # list a sent email once it has waited this many days

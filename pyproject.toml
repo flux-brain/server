@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "flux-brain"
-version = "0.16.0"
+version = "0.17.0"
 description = "Flux server side: the Discord relay that connects a capture channel to a vault repository maintained by Claude Code routines"
 readme = "README.md"
 license = "Apache-2.0"

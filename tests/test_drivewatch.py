@@ -1,6 +1,8 @@
 """Offline tests for the Drive watch module (2026-09-28): first run records the feed position only, the cheap drops
 (other drives, not owned, folders, trashed), the parent walk into sub-folders, settling, filing with project and text,
-new files only, and a file that disappears while pending. No network: Drive and GitHub are fakes."""
+new files only, and a file that disappears while pending; starred folders (2026-10-10): the list read from Drive joins
+the watched set, a listed folder keeps its project, and a file queued under a folder that lost its star is dropped.
+No network: Drive and GitHub are fakes."""
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -44,6 +46,7 @@ class FakeDrive:
 
     def __init__(self, changes, files):
         self.changes, self.files, self.lookups = changes, files, []
+        self.starred, self.queries = [], []
         self.s = self
         self.token = type("T", (), {"reset": lambda self: None})()
 
@@ -55,6 +58,13 @@ class FakeDrive:
             return FakeResp({"startPageToken": "t1"})
         if url.endswith("/changes"):
             return FakeResp({"changes": self.changes, "newStartPageToken": "t2"})
+        if url.endswith("/files"):                      # the starred-folders list, served in pages of one
+            self.queries.append(params)
+            i = int(params.get("pageToken", 0))
+            page = {"files": self.starred[i:i + 1]}
+            if i + 1 < len(self.starred):
+                page["nextPageToken"] = str(i + 1)
+            return FakeResp(page)
         fid = url.rsplit("/", 1)[1]
         self.lookups.append(fid)
         return FakeResp(FOLDERS[fid])
@@ -236,3 +246,57 @@ def test_post_and_tap_adds_the_folder(sug):
     assert w.act() == 1 and st["extra_folders"] == [{"id": OTHER}] and OTHER in w.folders
     w2, _gh2, _ = watcher([], {}, st=st)
     assert OTHER in w2.folders                              # persists in state, flux.toml untouched
+
+
+# ---------- starred folders ----------
+def test_starred_folders_join_the_watched_set(cfg):
+    under_star, under_meet = "doc00000000000000000010", "doc00000000000000000011"
+    changes = [{"fileId": under_star, "file": f(under_star, [OTHER])}, {"fileId": under_meet, "file": f(under_meet, [SUB])}]
+    w, _gh, st = watcher(changes, {})
+    w.d.starred = [{"id": OTHER, "name": "Other", "parents": ["root"]}, {"id": MEET, "name": "Meet", "parents": ["root"]}]
+    assert w.add_starred() == 1                                     # Meet was listed already
+    assert w.folders[OTHER] == {"id": OTHER, "starred": True} and w.folders[MEET]["project"] == "meetings"
+    assert len(w.d.queries) == 2 and "starred = true" in w.d.queries[0]["q"] and w.d.queries[1]["pageToken"] == "1"
+    assert OTHER not in w.d.lookups                                 # name and parent come with the list
+    assert w.scan() == 2
+    assert st["pending"][under_star]["folder"] == OTHER and st["pending"][under_meet]["folder"] == MEET
+    assert "extra_folders" not in st                                # the star is the switch: nothing kept in the state
+
+
+def test_starred_only_needs_no_listed_folder(cfg):
+    fid = "doc00000000000000000012"
+    st = {"page_token": "t1"}
+    w = dw.Watcher(FakeDrive([{"fileId": fid, "file": f(fid, [SUB])}], {fid: f(fid, [SUB])}), FakeGH(), st, folders=[])
+    assert w.scan() == 0 and st["pending"] == {}                    # nothing starred yet: nothing is watched
+    w.d.starred = [{"id": MEET, "name": "Meet", "parents": ["root"]}]
+    w.st["page_token"] = "t1"
+    assert w.add_starred() == 1 and w.scan() == 1                   # a sub-folder of the starred one
+    assert w.settle_and_file() == 1
+    cap = w.gh.puts[-1][1]
+    assert "watched Google Drive folder \"Meet\"" in cap and "project:" not in cap
+
+
+def test_file_queued_under_a_folder_that_lost_its_star_is_dropped(cfg):
+    fid = "doc00000000000000000013"
+    files = {fid: f(fid, [OTHER], minutes_ago=30)}
+    w, _gh, st = watcher([{"fileId": fid, "file": files[fid]}], files)
+    w.d.starred = [{"id": OTHER, "name": "Other", "parents": ["root"]}]
+    w.add_starred()
+    assert w.scan() == 1 and fid in st["pending"]
+    w2, gh2, _ = watcher([], files, st=st)                          # next run: the star is gone
+    assert w2.add_starred() == 0
+    assert w2.settle_and_file() == 0 and st["pending"] == {} and gh2.puts == [] and fid not in st["filed"]
+
+
+def test_starred_is_off_by_default_and_read_from_flux_toml(flux_home):
+    flux_home('[vault]\nrepo = "owner/vault"\n')
+    assert CFG.drive_watch_starred is False
+    flux_home('[vault]\nrepo = "owner/vault"\n[drive_watch]\nstarred = true\n')
+    assert CFG.drive_watch_starred is True and CFG.drive_watch_folders == []
+
+
+def test_never_folder_hides_its_files_inside_a_watched_folder(cfg, monkeypatch):
+    monkeypatch.setattr(CFG, "drive_watch_never", [SUB])
+    hidden, shown = "doc00000000000000000014", "doc00000000000000000015"
+    w, _gh, st = watcher([{"fileId": hidden, "file": f(hidden, [SUB])}, {"fileId": shown, "file": f(shown, [MEET])}], {})
+    assert w.scan() == 1 and set(st["pending"]) == {shown}          # SUB is below the watched MEET, and in never

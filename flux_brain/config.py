@@ -138,11 +138,12 @@ class Config:
         self.drive_watch_owned_only = bool(g("drive_watch", "owned_only", True))
         self.drive_watch_text = bool(g("drive_watch", "text", True))
         self.drive_watch_max_per_run = int(g("drive_watch", "max_per_run", 10))
+        self.drive_watch_starred = bool(g("drive_watch", "starred", False))       # also watch the folders starred in Drive
         self.drive_watch_suggest = bool(g("drive_watch", "suggest", False))       # weekly "watch this folder?" posts
         self.drive_watch_suggest_every = int(g("drive_watch", "suggest_every_days", 7))
         self.drive_watch_suggest_min = int(g("drive_watch", "suggest_min_files", 3))
         self.drive_watch_suggest_max = int(g("drive_watch", "suggest_max", 3))
-        self.drive_watch_never = [str(x) for x in g("drive_watch", "never", [])]    # folder ids never suggested (and below)
+        self.drive_watch_never = [str(x) for x in g("drive_watch", "never", [])]    # folder ids never suggested nor filed (and below)
         # Follow-up module (2026-09-28): sent emails still waiting for an answer -> <dir>/waiting.md (flux_brain.followups)
         self.followups_days = int(g("followups", "days", 4))
         self.followups_lookback = int(g("followups", "lookback_days", 30))
