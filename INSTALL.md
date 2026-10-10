@@ -101,7 +101,8 @@ in `#flux` and watch it react within 15 seconds.
   5. Optional, `starred = true`: the folders you have starred in Drive are watched as well, sub-folders included.
      The list is read from Drive at every run, so starring a folder (on a phone, say) starts the filing and removing
      the star stops it; `folders` may then stay empty. A starred folder has no `project`, so the routine routes its
-     files by content. Note that `never` only limits the suggestions: a starred or listed folder is filed whole.
+     files by content. A folder in `never` is left out even inside a starred or listed folder, sub-folders included:
+     put there what must not reach the vault.
 - **Follow-ups** (sent emails still waiting for an answer, listed in `followups/waiting.md` for the daily digest):
   needs the Gmail token. Set `[modules] followups = true`, enable `systemd/flux-followups.timer` (hourly). It reads
   only your own sent threads and their replies; newsletters and no-reply addresses are skipped. Label a thread with

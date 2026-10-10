@@ -293,3 +293,10 @@ def test_starred_is_off_by_default_and_read_from_flux_toml(flux_home):
     assert CFG.drive_watch_starred is False
     flux_home('[vault]\nrepo = "owner/vault"\n[drive_watch]\nstarred = true\n')
     assert CFG.drive_watch_starred is True and CFG.drive_watch_folders == []
+
+
+def test_never_folder_hides_its_files_inside_a_watched_folder(cfg, monkeypatch):
+    monkeypatch.setattr(CFG, "drive_watch_never", [SUB])
+    hidden, shown = "doc00000000000000000014", "doc00000000000000000015"
+    w, _gh, st = watcher([{"fileId": hidden, "file": f(hidden, [SUB])}, {"fileId": shown, "file": f(shown, [MEET])}], {})
+    assert w.scan() == 1 and set(st["pending"]) == {shown}          # SUB is below the watched MEET, and in never

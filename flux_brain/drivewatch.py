@@ -29,6 +29,9 @@ sub-folders. The list is read from Drive at the start of every run, so a star se
 removing it stops it, with no file to edit on the server; `folders` may then stay empty. A file queued under a folder
 that is no longer watched (the star was removed, a folder left the list) is dropped, not filed.
 
+`never` (folder ids) also limits the FILING since 2026-10-10: a file below a `never` folder is not filed even when a
+folder above it is watched. Before, the list only kept folders out of the suggestions.
+
 Config (`flux.toml`):
     [modules] drive_watch = true
     [drive_watch]
@@ -127,9 +130,13 @@ class Watcher:
         return {self.folder_info(fid)[2] for fid in self.folders}
 
     def watched_ancestor(self, parents):
-        """The watched folder entry above a file whose parents are `parents`, or None."""
+        """The watched folder entry above a file whose parents are `parents`, or None. A folder in `never` met on the
+        way up hides what is below it, even inside a watched folder (2026-10-10: a starred folder is watched whole,
+        and one sub-folder of it may hold what must not be filed)."""
         cur, hops = (parents or [""])[0], 0
         while cur and hops < MAX_DEPTH:
+            if cur in CFG.drive_watch_never:
+                return None
             if cur in self.folders:
                 return self.folders[cur]
             cur = self.folder_info(cur)[1]

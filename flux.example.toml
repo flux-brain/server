@@ -120,7 +120,7 @@ suggest = false                    # weekly: post the folders you changed most (
 suggest_every_days = 7
 suggest_min_files = 3
 suggest_max = 3
-never = []                         # folder ids never suggested, e.g. the attachment folder of the Drive module
+never = []                         # folder ids never suggested nor filed, sub-folders included, even inside a watched folder
 
 [followups]                        # when modules.followups = true; uses [gmail] token_file
 days = 4                           # list a sent email once it has waited this many days

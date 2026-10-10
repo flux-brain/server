@@ -143,7 +143,7 @@ class Config:
         self.drive_watch_suggest_every = int(g("drive_watch", "suggest_every_days", 7))
         self.drive_watch_suggest_min = int(g("drive_watch", "suggest_min_files", 3))
         self.drive_watch_suggest_max = int(g("drive_watch", "suggest_max", 3))
-        self.drive_watch_never = [str(x) for x in g("drive_watch", "never", [])]    # folder ids never suggested (and below)
+        self.drive_watch_never = [str(x) for x in g("drive_watch", "never", [])]    # folder ids never suggested nor filed (and below)
         # Follow-up module (2026-09-28): sent emails still waiting for an answer -> <dir>/waiting.md (flux_brain.followups)
         self.followups_days = int(g("followups", "days", 4))
         self.followups_lookback = int(g("followups", "lookback_days", 30))
