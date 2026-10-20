@@ -161,7 +161,8 @@ in `#flux` and watch it react within 15 seconds.
   label or tap (`[gmail] follow_threads`, on by default; `follow_days` = how far back a reply is looked for).
   1. Enable the **Gmail API** on the same Cloud project as Drive; reuse the Desktop OAuth client.
   2. On a machine with a browser: `flux-gmail-auth client_secret.json` (scope `gmail.modify`: read and
-     label changes, it cannot send). It writes `gmail-token.json` (mode 600) into `FLUX_HOME`; copy it to
+     label changes; Flux never sends with it, except the optional weekly briefing to your own address,
+     `[digest] weekly_email`). It writes `gmail-token.json` (mode 600) into `FLUX_HOME`; copy it to
      the server if needed, owner `flux`, mode 600.
   3. In Gmail, create the label named in `flux.toml` `[gmail] label` (default `📁 Flux`); the `/Filed`
      sub-label is created by the module. Set `[modules] gmail = true`.

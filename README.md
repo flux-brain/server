@@ -49,9 +49,10 @@ those two files; the code contains none.
 | Web page text (`[capture] web_links`) | shipped, off by default | outbound http(s) from the server; a private capture channel |
 | Gmail feed | shipped (`flux-gmail`, `flux-gmail-auth`) | Gmail API, scope gmail.modify |
 | Voicemail emails | shipped (part of `flux-gmail`, `[gmail] voicemail_from`), off by default | the Gmail token; transcribed, posted, archived |
-| Google Tasks checklists | shipped (`flux-tasks`, `flux-tasks-auth`) | Tasks API, scope tasks |
-| Google Calendar day files | shipped (`flux-calendar`, `flux-calendar-auth`) | Calendar API, two read-only scopes (events, calendar list) |
+| Google Tasks checklists | shipped (`flux-tasks`, `flux-tasks-auth`) | Tasks API, scope tasks; also writes `tasks/links.md` (each open action's task link, for the briefings) |
+| Google Calendar day files | shipped (`flux-calendar`, `flux-calendar-auth`) | Calendar API, two read-only scopes (events, calendar list); event and video links included |
 | Drive watch | shipped (`flux-drive-watch`), off by default | a Drive token that can read the watched folders (drive.readonly) |
+| Weekly briefing by email (`[digest] weekly_email`) | shipped, off by default | the Gmail token; sent only to the token's own address |
 | Follow-ups (waiting on) | shipped (`flux-followups`), off by default | the Gmail token |
 | Gmail triage (✅ / ✍️ buttons) | shipped (`flux-triage`), off by default | the Gmail token, the bot |
 | Google Keep checklists | not shipped | no public API; replaced by Tasks |
@@ -70,7 +71,9 @@ published repository and ends on the expected Discord 401 for placeholder secret
 ## Privacy by design
 
 Flux never reads your private conversations with other people (messaging apps). The relay only reads the
-channels you created for it, and the routines only see the vault repository.
+channels you created for it, and the routines only see the vault repository. Flux sends one kind of email only: the weekly briefing, when you turn it
+on, and only to your own Gmail address (read from the account, never from settings or vault content). Briefings
+are posted in Discord without link previews.
 
 ## Licence
 

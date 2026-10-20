@@ -860,3 +860,55 @@ def test_audit_after_a_marker_taken_back_sees_no_marker(h):
     st, _ = audited(h, [("m", "Owner", "run: start", None), ("u", "Owner", "run: start undone", None),
                         ("x", "Claude", "inbox: fold in", None)])
     assert st["late_commits"] == 1
+
+
+# ---------- briefing links + weekly email (2026-10-20) ----------
+WEEKLY = {"type": "blob", "path": "briefings/weekly/2026-W43.md", "sha": "w2"}
+
+
+def test_briefings_post_without_link_previews_the_rest_unchanged(h):
+    r = h.relay({})
+    r.blob_text = lambda sha: "body [x](https://example.com)"
+    r.discord = lambda *a, **k: Resp(204)
+    r.outbound("C", [DAILY, FILED])
+    flags = {c[1]["content"].split("**")[1]: c[1].get("flags") for c in h.calls}
+    assert flags == {DAILY["path"]: 4, FILED["path"]: None}
+
+
+def test_weekly_is_queued_and_mailed_once_only_with_the_flag(h, monkeypatch):
+    import flux_brain.lib.selfmail as sm
+    sent = []
+    monkeypatch.setattr(sm, "send_to_self", lambda s, tok, subject, md: sent.append(subject) or "mid1")
+    r = h.relay({})
+    r.blob_text = lambda sha: "# Your week ahead"
+    r.discord = lambda *a, **k: Resp(204)
+    r.outbound("C", [WEEKLY])                                     # flag off: posted, never mailed
+    assert sent == [] and not r.state.get("mail_queue")
+    monkeypatch.setattr(m.CFG, "digest_weekly_email", True)
+    r.outbound("C", [WEEKLY])                                     # already posted before the flag: not mailed
+    assert sent == []
+    r2 = h.relay({})
+    r2.blob_text, r2.discord = r.blob_text, r.discord
+    r2.outbound("C", [WEEKLY, DAILY])                             # new weekly with the flag: mailed once; daily never
+    r2.outbound("C", [WEEKLY, DAILY])
+    assert sent == ["Your week ahead · 2026-W43"] and r2.state["mail_queue"] == []
+
+
+def test_weekly_mail_failure_retries_next_tick_and_never_blocks_the_post(h, monkeypatch):
+    import flux_brain.lib.selfmail as sm
+    monkeypatch.setattr(m.CFG, "digest_weekly_email", True)
+    tries = []
+
+    def flaky(s, tok, subject, md):
+        tries.append(1)
+        if len(tries) == 1:
+            raise SystemExit("token missing")                     # a missing token must not stop the relay
+        return "mid"
+    monkeypatch.setattr(sm, "send_to_self", flaky)
+    r = h.relay({})
+    r.blob_text = lambda sha: "w"
+    r.discord = lambda *a, **k: Resp(204)
+    r.outbound("C", [WEEKLY])
+    assert len(h.calls) == 1 and r.state["mail_queue"] == [WEEKLY["path"]]
+    r.outbound("C", [WEEKLY])
+    assert len(tries) == 2 and r.state["mail_queue"] == []

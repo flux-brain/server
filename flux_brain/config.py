@@ -195,6 +195,9 @@ class Config:
         # first `mail_context_days` days (today + tomorrow by default); needs the Gmail token ([gmail] token_file).
         self.calendar_mail_context = bool(g("calendar", "mail_context", False))
         self.calendar_mail_context_days = int(g("calendar", "mail_context_days", 2))
+        # Weekly email (2026-10-20): a new briefings/weekly/ file is also mailed to the owner's own Gmail address
+        # (lib/selfmail.py; recipient from the Gmail profile, never from config). Needs the Gmail token. Off by default.
+        self.digest_weekly_email = bool(g("digest", "weekly_email", False))
         # secrets
         self.github_token = env.get("GITHUB_TOKEN", "")
         self.ops_webhook = env.get("OPS_WEBHOOK_URL", "")
