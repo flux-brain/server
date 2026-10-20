@@ -153,8 +153,10 @@ class OutboundMixin:
             for i, part in enumerate(parts):
                 if i < rec["done"]:
                     continue
+                # Briefings carry calendar, task and Drive links since 2026-10-20: no preview card per link (flags 4)
                 post_id = self.post(target, part, key=f"{e['path']}@{e['sha'][:10]}#{i}",
-                                    mention_user=CFG.owner_discord_id if question and i == 0 else None)
+                                    mention_user=CFG.owner_discord_id if question and i == 0 else None,
+                                    suppress_embeds=e["path"].startswith("briefings/"))
                 first_id = post_id if i == 0 else first_id
                 rec["done"] = i + 1
                 state.save_state(self.state)
@@ -162,6 +164,13 @@ class OutboundMixin:
                 self.voicemail_buttons(target, first_id, body)
             progress.pop(e["path"], None)
             posted.add(e["path"])
+            # Weekly email (2026-10-20): a NEW weekly briefing is queued for the owner's own mailbox once it is in
+            # Discord; mail_pending() sends it. Queued only here, so the weeklies posted before the flag was turned
+            # on are never mailed, and an edit of a posted weekly is not a new mail.
+            if CFG.digest_weekly_email and e["path"].startswith("briefings/weekly/") and not edited:
+                q = self.state.setdefault("mail_queue", [])
+                if e["path"] not in q:
+                    q.append(e["path"])
             self.state["posted"] = prune_posted(posted, {t["path"] for t in tree})
             if e["path"].startswith("notify/"):
                 sent[e["path"]] = e["sha"]
@@ -171,3 +180,28 @@ class OutboundMixin:
             state.save_state(self.state)
             # name the channel (2026-09-22): the only proof of the two-channel routing outside Discord itself
             log(f"posted {e['path']} -> {kind if target != channel else 'conversation'} channel")
+        self.mail_pending(tree)
+
+    def mail_pending(self, tree):
+        """Send the queued weekly briefings to the owner's own address (lib/selfmail.py). A failure is logged and
+        retried next tick and never blocks the Discord side; a file gone from the tree is dropped from the queue.
+        Sent paths leave the queue, so each weekly is mailed once."""
+        q = self.state.get("mail_queue") or []
+        if not q:
+            return
+        from ..lib.selfmail import send_to_self
+        shas = {t["path"]: t["sha"] for t in tree if t["type"] == "blob"}
+        for path in list(q):
+            if path not in shas:
+                q.remove(path)
+                continue
+            week = path.rsplit("/", 1)[-1][:-len(".md")]
+            try:
+                mid = send_to_self(self.s, CFG.gmail_token_file, f"Your week ahead · {week}",
+                                   self.blob_text(shas[path]).strip() + "\n")
+            except (Exception, SystemExit) as exc:  # noqa: BLE001 - a missing token raises SystemExit: not fatal here
+                log(f"weekly email for {path} not sent ({exc.__class__.__name__}); retried next tick")
+                break
+            q.remove(path)
+            state.save_state(self.state)
+            log(f"mailed {path} to the owner's own address ({mid})")

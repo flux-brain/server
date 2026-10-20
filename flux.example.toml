@@ -136,3 +136,8 @@ correspondents_days = 180          # a sender you wrote to in this window is pos
 hours_utc = [6, 21]                # post only between these UTC hours (the rest wait)
 max_posts = 8                      # per run
 ttl_days = 3                       # buttons stop working after this
+
+[digest]
+# Also email each new weekly briefing (briefings/weekly/) to your own Gmail address, once. The recipient is always
+# the Gmail token's own account; there is no way to set another. Needs [gmail] token_file.
+# weekly_email = true

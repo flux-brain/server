@@ -111,11 +111,12 @@ def test_is_bulk_flags_automated_messages():
 
 
 def test_no_module_can_send_mail():
-    """The host's Gmail token may carry gmail.send. No Flux module may ever call the send endpoints."""
+    """The host's Gmail token may carry gmail.send. No Flux module may ever call the send endpoints, except
+    lib/selfmail.py (2026-10-20), which can only send to the token account's own address (its own tests)."""
     root = pathlib.Path(__file__).resolve().parents[1] / "flux_brain"
     send = re.compile(r"""["'/](?:messages|drafts)/send\b|users/me/messages/send""")
     hits = [str(p) for p in root.rglob("*.py") if send.search(p.read_text())]
-    assert hits == []
+    assert [h for h in hits if not h.endswith("lib/selfmail.py")] == []
 
 
 def test_gmail_client_backs_off_on_rate_limit(monkeypatch):
