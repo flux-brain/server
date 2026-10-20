@@ -340,3 +340,32 @@ def test_gmail_module_off_plain_action_no_hand_off(monkeypatch):
     add_email_task(s, lid, "Fwd: contract", "18f3a2b4c5d6e7f9")
     settle(s)
     assert "- new action: Fwd: contract\n" in s.gh.puts[-1][1] and g.calls == []
+
+
+def test_snapshot_keeps_the_task_link_and_links_file_lists_open_actions_only():
+    snap = tk.snapshot([{"id": "t1", "title": "Pay", "notes": "^ab12", "status": "needsAction",
+                         "webViewLink": "https://tasks.google.com/task/t1"},
+                        {"id": "t2", "title": "Done", "notes": "^cd34", "status": "completed",
+                         "webViewLink": "https://tasks.google.com/task/t2"},
+                        {"id": "t3", "title": "No id", "status": "needsAction", "webViewLink": "https://tasks.google.com/task/t3"}])
+    assert snap["t1"]["url"].endswith("/t1") and tk.diff_tasks(snap, snap) == []
+    text = tk.render_links({"proj": {"snapshot": snap}, "old": {"gone": True, "snapshot": snap}})
+    assert "- ^ab12 [proj](https://tasks.google.com/task/t1)" in text
+    assert "cd34" not in text and "t3" not in text and text.count("- ^") == 1
+
+
+def test_write_links_commits_only_when_the_text_changes(tmp_path, monkeypatch):
+    monkeypatch.setattr(tk, "state_file", lambda: str(tmp_path / "tasks-state.json"))
+    puts = []
+
+    class GH:
+        def get(self, path):
+            return (None, None)
+
+        def put(self, path, text, message, sha=None):
+            puts.append(path)
+    s = tk.Sync.__new__(tk.Sync)
+    s.st, s.gh = {"projects": {}}, GH()
+    s.write_links()
+    s.write_links()
+    assert puts == ["tasks/links.md"]

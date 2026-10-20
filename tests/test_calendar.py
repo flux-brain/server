@@ -208,3 +208,15 @@ def test_last_emails_people_only_and_rendered_under_the_event():
     text = cal.render_day(date(2026, 10, 1), [(ev, "Work", None, None)], True, 500, mail)
     assert '  - last email with Anna: ' in text and '"Lease terms" ([Gmail](https://mail.google.com/mail/u/0/#all/t1))' in text
     assert "last email" not in cal.render_day(date(2026, 10, 1), [(ev, "Work", None, None)], True, 500, None)
+
+
+def test_render_day_links_the_title_and_the_video_call_https_only():
+    ev = {"summary": "Notary", "htmlLink": "https://www.google.com/calendar/event?eid=abc",
+          "hangoutLink": "https://meet.google.com/xyz", "start": {}, "end": {}}
+    text = cal.render_day(date(2026, 10, 1), [(ev, "Work", None, None)], False, 500)
+    assert "- All day **[Notary](https://www.google.com/calendar/event?eid=abc)** (Work) · [Video](https://meet.google.com/xyz)" in text
+    ev2 = {"summary": "Call", "htmlLink": "javascript:x",
+           "conferenceData": {"entryPoints": [{"entryPointType": "phone", "uri": "tel:1"},
+                                              {"entryPointType": "video", "uri": "https://zoom.example/j/1"}]}}
+    text = cal.render_day(date(2026, 10, 1), [(ev2, "Work", None, None)], False, 500)
+    assert "**Call** (Work) · [Video](https://zoom.example/j/1)" in text and "javascript" not in text
