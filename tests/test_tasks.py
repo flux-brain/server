@@ -369,3 +369,16 @@ def test_write_links_commits_only_when_the_text_changes(tmp_path, monkeypatch):
     s.write_links()
     s.write_links()
     assert puts == ["tasks/links.md"]
+
+
+def test_a_snapshot_taken_before_links_were_stored_gets_them_without_an_owner_edit():
+    # 2026-10-20: on deploy every stored snapshot lacked "url", so tasks/links.md said "No open actions" until a
+    # list changed. A quiet tick must fill the links in (and still file nothing).
+    s, lid = synced()
+    for t in s.api.store[lid]["tasks"]:
+        t["webViewLink"] = f"https://tasks.google.com/task/{t['id']}"
+    snap = s.st["projects"]["project-x"]["snapshot"]
+    assert not any(v.get("url") for v in snap.values())
+    s.tick()
+    assert all(v.get("url") for v in s.st["projects"]["project-x"]["snapshot"].values())
+    assert not any(p.startswith("inbox/") for p, _ in s.gh.puts)

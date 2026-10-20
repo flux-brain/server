@@ -409,6 +409,11 @@ class Sync:
                 filed = True
             else:
                 p.pop("unsettled", None)
+                # No owner edit, but keep each task's Google Tasks link current (2026-10-20): snapshots taken before
+                # links were stored never got one, so tasks/links.md stayed empty until a list changed.
+                for tid, v in cur.items():
+                    if tid in p["snapshot"] and v.get("url") and p["snapshot"][tid].get("url") != v["url"]:
+                        p["snapshot"][tid]["url"] = v["url"]
         before = len(p.get("pending", {}))
         p["pending"] = resolve_pending(p.get("pending", {}), page, inbox, time.time())
         cleared = len(p["pending"]) != before
