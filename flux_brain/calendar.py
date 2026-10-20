@@ -174,7 +174,14 @@ def render_day(day, items, details, max_desc, mail=None):
             when = fmt(start) if end <= start else f"{fmt(start)}-{fmt(end)}"   # a reminder-style event has no length
         loc, r = one_line(ev.get("location", ""), 200)
         redacted |= r
-        lines.append(f"- {when} **{title}** ({cal})" + (f" · {loc}" if loc else ""))
+        # Links (2026-10-20): the title opens the event in Google Calendar and a video call gets its own link, so a
+        # briefing can carry them through. Only https links from Google's own fields, never from the description.
+        link = ev.get("htmlLink", "")
+        shown = f"**[{title}]({link})**" if link.startswith("https://") else f"**{title}**"
+        video = ev.get("hangoutLink") or next((e.get("uri") for e in (ev.get("conferenceData") or {}).get("entryPoints", [])
+                                                if e.get("entryPointType") == "video"), "")
+        lines.append(f"- {when} {shown} ({cal})" + (f" · {loc}" if loc else "")
+                     + (f" · [Video]({video})" if (video or "").startswith("https://") else ""))
         if details:
             people = [a.get("displayName") or a.get("email", "") for a in ev.get("attendees", [])
                       if not a.get("self") and not a.get("resource")]
