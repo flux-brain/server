@@ -505,17 +505,17 @@ def test_find_extra_channels_named_cached_renamed_and_missing(h, monkeypatch):
     class G:
         def request(self, method, url, **kw):
             gets.append(url)
-            return Resp(200, [{"type": 0, "name": nm, "id": f"id-{nm}"} for nm in ("flux", "flux-digest", "flux-actions")])
+            return Resp(200, [{"type": 0, "name": nm, "id": f"id-{nm}"} for nm in ("flux", "flux-day-ahead", "flux-actions")])
     r = h.relay({})
     r.s, r.guild = G(), "g"
     assert r.find_extra_channels() == {} and gets == []          # nothing named in flux.toml: no lookup at all
-    monkeypatch.setattr(m.CFG, "digest_channel_name", "flux-digest")
+    monkeypatch.setattr(m.CFG, "digest_channel_name", "flux-day-ahead")
     monkeypatch.setattr(m.CFG, "voice_channel_name", "voice-notes")
-    assert r.find_extra_channels() == {"digest": "id-flux-digest"} and len(gets) == 1   # one guild read for both
+    assert r.find_extra_channels() == {"digest": "id-flux-day-ahead"} and len(gets) == 1   # one guild read for both
     assert r.state["channels"]["voice"] == {"name": "voice-notes", "id": None}
     r2 = h.relay(r.state)                                        # next run: the found one is cached, the miss is retried
     r2.s, r2.guild = G(), "g"
-    assert r2.find_extra_channel("digest") == "id-flux-digest" and len(gets) == 1
+    assert r2.find_extra_channel("digest") == "id-flux-day-ahead" and len(gets) == 1
     monkeypatch.setattr(m.CFG, "digest_channel_name", "flux-actions")   # a new name in flux.toml is looked up again
     assert r2.find_extra_channel("digest") == "id-flux-actions" and len(gets) == 2
 
