@@ -174,8 +174,15 @@ class OutboundMixin:
             self.state["posted"] = prune_posted(posted, {t["path"] for t in tree})
             if e["path"].startswith("notify/"):
                 sent[e["path"]] = e["sha"]
+                # 2026-11-09: remember where a notice landed ("<channel id>/<message id>" of its first part), so a host
+                # job can link to it (the open-items Sheet writes the link next to the answer). A resumed partial post
+                # has no first id: nothing is recorded, never a wrong link.
+                if first_id:
+                    self.state.setdefault("posted_msg", {})[e["path"]] = f"{target}/{first_id}"
             keep = set(self.state["posted"])
             self.state["posted_sha"] = {p: v for p, v in sent.items() if p in keep}
+            if "posted_msg" in self.state:
+                self.state["posted_msg"] = {p: v for p, v in self.state["posted_msg"].items() if p in keep}
             sent = self.state["posted_sha"]
             state.save_state(self.state)
             # name the channel (2026-09-22): the only proof of the two-channel routing outside Discord itself
