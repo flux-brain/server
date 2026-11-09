@@ -569,6 +569,24 @@ def test_edited_notice_is_posted_again_marked_updated(h):
     assert chan(h.calls[1]) == "L" and st["posted_sha"] == {NOTE["path"]: "n2"} and st["posted"] == [NOTE["path"]]
 
 
+def test_notice_message_id_is_remembered_and_pruned(h):
+    # 2026-11-09: posted_msg keeps "<channel>/<message>" of a notice's first part, for links from host jobs
+    st = {}
+    r = h.relay(st)
+    r.blob_text = lambda sha: "body"
+    h.queue.append(Resp(200, {"id": "777"}))
+    r.outbound("C", [NOTE])
+    assert st["posted_msg"] == {NOTE["path"]: "C/777"}
+    r.outbound("C", [])                                             # the file left the tree: its link goes too
+    assert st["posted_msg"] == {}
+
+
+def test_sheet_capture_is_a_server_note():
+    from flux_brain.lib import captures
+    assert captures.host_kind("inbox/2026-11-09T092043Z-sheet-CDA-07.md") == ("sheet", "CDA-07")
+    assert captures.describe("sheet", "CDA-07") == "Sheet instruction, CDA-07"
+
+
 def test_posted_before_the_guard_is_seeded_not_reposted_and_briefings_never_repost(h):
     st = {"posted": [NOTE["path"], DAILY["path"]]}
     r = h.relay(st)
