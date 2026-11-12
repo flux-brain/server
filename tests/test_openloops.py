@@ -309,3 +309,27 @@ def test_config_defaults_fail_closed(flux_home):
                   '[openloops]\nsheet_id = "S"\nprojects = { house = "alpha" }\n')
     assert c.openloops_writers == [] and c.openloops_tab == "Inbox" and not c.mod_openloops
     assert c.openloops_token_file.endswith("/d.json") and c.openloops_projects == {"house": "alpha"}
+
+
+def test_project_from_memory_mirror():
+    """With memory/<cluster>-INDEX.md in the vault, a new page action takes the cluster of the page's memory file."""
+    page = "---\nmemory: [alpha-notes.md]\n---\n- [ ] old ^aaaa\n"
+    gh = FakeGH()
+    gh.pages = {"wiki/projects/house.md": page,
+                "memory/alpha-INDEX.md": "# Alpha\n- [Notes](alpha-notes.md) — x\n- [Other](beta-INDEX.md)\n"}
+    sh = FakeSheet([HEAD, row("ALPHA-03")])
+    st = {}
+    run(sh, gh, None, st, "2026-11-09", NOW)                     # baseline
+    gh.pages["wiki/projects/house.md"] = page + "- [ ] new thing ^bbbb\n"
+    run(sh, gh, None, st, "2026-11-09", NOW)
+    ap = getattr(sh, "appended", [])
+    assert len(ap) == 1 and ap[0][0] == "ALPHA-04" and ap[0][1] == "alpha"
+
+
+def test_project_lookup_order():
+    cl = ol.memory_clusters({"alpha": "- [n](alpha-notes.md)", "beta": "- [n](alpha-notes.md)\n- [m](beta-m.md)"})
+    assert cl == {"alpha-notes": "alpha", "beta-m": "beta"}
+    text = "---\nmemory: [unknown.md, beta-m.md]\n---"
+    assert ol.page_project("house", {"house": "home"}, text, cl) == "home"     # the flux.toml map wins
+    assert ol.page_project("house", {}, text, cl) == "beta"                     # first file an index lists
+    assert ol.page_project("house", {}, "---\nmemory: []\n---", cl) == "house"  # else the page name

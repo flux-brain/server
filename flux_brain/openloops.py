@@ -24,7 +24,8 @@ Each run (systemd timer, every 5 minutes by default, under flock):
      records every Status (no backfill). Status `duplicate` = the row repeats another (`Duplicate of` names it, or
      Flux finds it and answers `duplicate_of:`).
   5. New page actions: a new open `- [ ] ... ^id` action on a vault project page becomes a row (`<PROJECT>-nn`,
-     project = `[openloops] projects` entry for the page, else the page name; Holder `vault:<page>#^id`); when that
+     project = `[openloops] projects` entry for the page, else (when the vault holds a memory mirror) the index
+     cluster of the page's first `memory:` file, else the page name; Holder `vault:<page>#^id`); when that
      action is ticked, the row's Status becomes `done`. The first run only records the actions already there.
 
 Rows are found by their ID (column A) on every run, never by a saved row number: the owner sorts and filters, and
@@ -214,9 +215,31 @@ def page_actions(text):
     return out
 
 
-def page_project(page, projects):
-    """Project of a vault page: `[openloops] projects` maps a page name to a project, else the page name itself."""
-    return projects.get(page, page)
+MEMORY_INDEX = re.compile(r"memory/([a-z0-9][a-z0-9-]*)-INDEX\.md")
+
+
+def memory_clusters(index_texts):
+    """{memory file slug: cluster} from the vault's memory mirror: `memory/<cluster>-INDEX.md` lists its members as
+    `](file.md)` links. The first cluster that lists a file wins (a file sits in one index)."""
+    out = {}
+    for cluster, text in sorted(index_texts.items()):
+        for f in re.findall(r"\]\(([a-z0-9][a-z0-9-]*)\.md\)", text or ""):
+            if not f.endswith("-INDEX"):
+                out.setdefault(f, cluster)
+    return out
+
+
+def page_project(page, projects, text="", cluster_of=None):
+    """Project of a vault page, first match wins: `[openloops] projects` (page name -> project); with a memory mirror in
+    the vault, the cluster of the first file in the page's `memory:` list that an index lists; else the page name."""
+    if page in projects:
+        return projects[page]
+    m = re.search(r"^memory:\s*\[(.*?)\]\s*$", text or "", re.M)
+    for f in (m.group(1).split(",") if m and cluster_of else []):
+        c = cluster_of.get(f.strip().strip("'\"").removesuffix(".md"))
+        if c:
+            return c
+    return page
 
 
 def next_id(project, rows, taken):
@@ -357,13 +380,15 @@ def run(sheet, gh, bot, state, today, now, dry=False, allowed=(),
                 state["status"] = {**{k: v for k, v in seen.items() if k in current}, **current}
     # 5: new open actions on vault project pages -> rows; a ticked action closes its row
     try:
-        pages = [e for e in gh.tree() if e.get("type", "blob") == "blob"
-                 and re.fullmatch(r"wiki/projects/[^/]+\.md", e.get("path", ""))]
+        tree = [e for e in gh.tree() if e.get("type", "blob") == "blob"]
+        pages = [e for e in tree if re.fullmatch(r"wiki/projects/[^/]+\.md", e.get("path", ""))]
+        indexes = {m.group(1): e["sha"] for e in tree if (m := MEMORY_INDEX.fullmatch(e.get("path", "")))}
     except Exception as exc:                                   # noqa: BLE001
         pages = None
         lines.append(f"page scan FAILED ({exc.__class__.__name__}: {str(exc)[:120]})")
         rc = 1
     if pages is not None:
+        cluster_of = None                                      # memory mirror, read on first need
         known = state.get("actions")                           # {page path: {"sha", "ids": {id: ticked}}}
         first = known is None
         known = {} if first else known
@@ -380,7 +405,9 @@ def run(sheet, gh, bot, state, today, now, dry=False, allowed=(),
             for aid, (ticked, atext, due) in acts.items():
                 hold = f"vault:{e['path']}#^{aid}"
                 if not first and aid not in old and not ticked and hold not in holders:
-                    proj = page_project(page, projects)
+                    if cluster_of is None:                     # read the memory mirror once, only when a row is due
+                        cluster_of = memory_clusters({c: gh.blob_text(s) for c, s in indexes.items()})
+                    proj = page_project(page, projects, text, cluster_of)
                     nid = next_id(proj, rows, taken)
                     taken.append(nid)
                     new_rows.append({"ID": nid, "Project": proj, "Item": atext[:300], "Owner": CFG.openloops_row_owner, "Status": "open",
