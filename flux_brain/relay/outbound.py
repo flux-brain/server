@@ -187,6 +187,12 @@ class OutboundMixin:
             state.save_state(self.state)
             # name the channel (2026-09-22): the only proof of the two-channel routing outside Discord itself
             log(f"posted {e['path']} -> {kind if target != channel else 'conversation'} channel")
+        # 2026-11-12: also drop the message ids of notices that left the tree when nothing new was posted (the pruning
+        # above only runs after a post, so a quiet relay kept stale ids until the next notice)
+        paths = {t["path"] for t in tree}
+        if any(p not in paths for p in self.state.get("posted_msg", {})):
+            self.state["posted_msg"] = {p: v for p, v in self.state["posted_msg"].items() if p in paths}
+            state.save_state(self.state)
         self.mail_pending(tree)
 
     def mail_pending(self, tree):
