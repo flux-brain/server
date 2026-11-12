@@ -137,7 +137,8 @@ writers = []                       # REQUIRED: the only Google accounts that may
 tab = "Inbox"
 title = "Flux open items"
 row_owner = ""                     # Owner cell of the rows the module adds for new page actions
-projects = {}                      # optional: vault page name -> project name, e.g. { kitchen-renovation = "home" }
+projects = {}                      # optional: vault page name -> project name, e.g. { kitchen-renovation = "home" };
+                                   # with a memory mirror in the vault, unlisted pages take the cluster of their memory: files
 # token_file = "drive-token.json"  # default: [drive] token_file (drive.file is enough for a Sheet setup created)
 
 [triage]                           # when modules.triage = true; uses [gmail] token_file and the Discord bot
