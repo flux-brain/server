@@ -56,7 +56,7 @@ those two files; the code contains none.
 | Weekly briefing by email (`[digest] weekly_email`) | shipped, off by default | the Gmail token; sent only to the token's own address |
 | Follow-ups (waiting on) | shipped (`flux-followups`), off by default | the Gmail token |
 | Gmail triage (✅ / ✍️ buttons) | shipped (`flux-triage`), off by default | the Gmail token, the bot |
-| Open-items sheet | not shipped | a private host job reads a Google Sheet of open items and writes `source: sheet` captures (an instruction typed in a row, or a batch of status edits); the relay knows the kind and starts the run at once |
+| Open-items sheet | coming (not shipped yet) | a private host job reads a Google Sheet of open items and writes `source: sheet` captures (an instruction typed in a row, or a batch of status edits); the relay knows the kind and starts the run at once |
 | Google Keep checklists | not shipped | no public API; replaced by Tasks |
 | Memory mirror + reconcile | not shipped | Claude Code file-based memory store |
 
