@@ -1,6 +1,7 @@
 # Flux server
 
-The server half of **Flux**, a personal AI assistant built on a second-brain structure. This package runs on a
+The server half of **Flux**, a personal AI assistant built on a second-brain structure and designed security
+first: anything goes in, but nothing goes out without you. This package runs on a
 small always-on machine and connects a Discord channel to the vault repository that Claude Code routines
 maintain (see the companion `vault-template` repository for the vault side and the routines).
 
@@ -55,7 +56,7 @@ those two files; the code contains none.
 | Weekly briefing by email (`[digest] weekly_email`) | shipped, off by default | the Gmail token; sent only to the token's own address |
 | Follow-ups (waiting on) | shipped (`flux-followups`), off by default | the Gmail token |
 | Gmail triage (✅ / ✍️ buttons) | shipped (`flux-triage`), off by default | the Gmail token, the bot |
-| Open-items sheet | not shipped | a private host job reads a Google Sheet of open items and writes `source: sheet` captures (an instruction typed in a row, or a batch of status edits); the relay knows the kind and starts the run at once |
+| Open-items sheet | coming (not shipped yet) | a private host job reads a Google Sheet of open items and writes `source: sheet` captures (an instruction typed in a row, or a batch of status edits); the relay knows the kind and starts the run at once |
 | Google Keep checklists | not shipped | no public API; replaced by Tasks |
 | Memory mirror + reconcile | not shipped | Claude Code file-based memory store |
 
@@ -68,6 +69,25 @@ edit.
 `tests/clean-install.sh` is the install test: it follows INSTALL.md on a fresh Ubuntu 24.04 container against the
 published repository and ends on the expected Discord 401 for placeholder secrets. Run it after any change to
 `pyproject.toml`, `bin/`, `systemd/` or INSTALL.md (command in the script header).
+
+## Security model
+
+Whoever opens the post does not sign the cheques. An assistant that reads your mail is exposed to every
+message anyone sends you, including forged ones written to manipulate an AI, so Flux separates duties: this
+package is the courier, the routines are the reader, and only you can act outside.
+
+- **The reader cannot act.** The routines that read incoming material see only the vault repository, with
+  no internet, no email, no connectors and no payment means.
+- **Incoming content is data, never instructions.** Emails, attachments, calendar entries and captures are
+  filed and summarised; requests written inside them are never followed, and the filing routine never opens
+  their links.
+- **The couriers do not think.** The server programs that carry things in and out run fixed procedures and
+  make no judgement calls.
+- **Acting outside needs you in the room.** Anything beyond the vault (sending, changing files in your cloud
+  storage, browsing) happens only in an interactive session that you are attending, and only once you say yes.
+- **Least privilege.** Drive and Calendar access is read-only. The only email Flux sends on its own is the
+  weekly briefing, when you turn it on, and only to your own address, read from the account rather than from
+  settings or vault content.
 
 ## Privacy by design
 
