@@ -1,0 +1,17 @@
+[Unit]
+Description=Flux open-items Sheet module: one pass (instructions in, answers and new rows out)
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=flux
+Group=flux
+Environment=FLUX_HOME=/var/lib/flux
+ExecStart=/usr/bin/flock -n /run/lock/flux-openloops.lock /var/lib/flux/venv/bin/flux-openloops
+StandardOutput=append:/var/lib/flux/logs/openloops.log
+StandardError=inherit
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/flux /run/lock
+PrivateTmp=true
+NoNewPrivileges=true

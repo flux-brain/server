@@ -38,6 +38,7 @@ flux-calendar-auth = "flux_brain.calendar:auth_main" # one-time Calendar consent
 flux-drive-watch = "flux_brain.drivewatch:main"      # the Drive watch module, one pass (run by flux-drive-watch.timer)
 flux-followups = "flux_brain.followups:main"         # the follow-up module, one pass (run by flux-followups.timer)
 flux-triage = "flux_brain.triage:main"               # the Gmail triage module, one pass (run by flux-triage.timer)
+flux-openloops = "flux_brain.openloops:main"         # the open-items Sheet module, one pass (flux-openloops.timer); `setup` creates the Sheet
 
 [tool.setuptools]
 script-files = ["bin/flux-relay-loop", "bin/flux-ask"]   # shell helpers installed next to flux-relay

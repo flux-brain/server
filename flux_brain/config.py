@@ -123,6 +123,7 @@ class Config:
         self.mod_drive_watch = bool(g("modules", "drive_watch", False))
         self.mod_followups = bool(g("modules", "followups", False))
         self.mod_triage = bool(g("modules", "triage", False))
+        self.mod_openloops = bool(g("modules", "openloops", False))   # open-items Google Sheet (flux_brain.openloops)
         self.drive_id = g("drive", "drive_id", "")
         self.drive_folder_id = g("drive", "folder_id", "")
         self.drive_token_file = str(self.home / g("drive", "token_file", "drive-token.json"))
@@ -151,6 +152,16 @@ class Config:
         self.followups_ignore = [str(i).lower() for i in g("followups", "ignore", [])]
         self.followups_max_items = int(g("followups", "max_items", 30))
         self.followups_skip_forwards = bool(g("followups", "skip_forwards", True))
+        # Open-items Sheet module (2026-11-12): one row per open item, an Instruction column the owner types into
+        # (flux_brain.openloops). `writers` has no default on purpose: an empty list refuses to run (fail closed).
+        self.openloops_sheet_id = str(g("openloops", "sheet_id", ""))
+        self.openloops_tab = str(g("openloops", "tab", "Inbox"))
+        self.openloops_title = str(g("openloops", "title", "Flux open items"))
+        self.openloops_writers = [str(w).lower() for w in g("openloops", "writers", [])]
+        self.openloops_row_owner = str(g("openloops", "row_owner", ""))      # Owner cell of rows the module adds
+        self.openloops_projects = {str(k): str(v) for k, v in (g("openloops", "projects", {}) or {}).items()}  # page -> project
+        # default: the Drive token (drive.file is enough for a Sheet that `flux-openloops setup` created)
+        self.openloops_token_file = str(self.home / g("openloops", "token_file", g("drive", "token_file", "drive-token.json")))
         # Triage module (2026-09-28): new emails that probably matter -> a post with ✅ / ✍️ buttons (flux_brain.triage)
         self.triage_keywords = [str(k) for k in g("triage", "keywords", [])]
         self.triage_correspondents_days = int(g("triage", "correspondents_days", 180))

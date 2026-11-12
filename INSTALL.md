@@ -107,6 +107,14 @@ in `#flux` and watch it react within 15 seconds.
   needs the Gmail token. Set `[modules] followups = true`, enable `systemd/flux-followups.timer` (hourly). It reads
   only your own sent threads and their replies; newsletters and no-reply addresses are skipped. Label a thread with
   `[followups] dismiss_label` in Gmail to drop it. `FOLLOWUPS_DRY=1 flux-followups` prints the list instead.
+- **Open-items Sheet** (every open item of every project in one Google Sheet; type an instruction on a row and
+  Flux acts on it in the vault and answers in the row): needs the Drive token (`flux-drive-auth`) and the Sheets API
+  enabled in your Google Cloud project. Run `flux-openloops setup` once: it creates the Sheet (title and tab from
+  `[openloops]`) and prints its id. Set `[openloops] sheet_id` and `writers` (your own Google account; required),
+  `[modules] openloops = true`, then enable `systemd/flux-openloops.timer` (every 5 minutes). Do not share the Sheet
+  for editing: any other writer stops the module and sends an ops alert, because an instruction typed in the Sheet
+  is acted on as yours. The vault side is `ops/sheet.md` in the template. `flux-openloops --dry` reads and prints
+  only; `touch $FLUX_HOME/openloops.disabled` pauses it.
 - **Gmail triage** (new emails that probably matter, posted in `#flux` with two buttons): needs the Gmail token and
   the bot. A message is posted when a person (not a newsletter or a no-reply address) sent it and it answers a
   conversation you wrote in, or comes from someone you wrote to (`correspondents_days`), or names a `keywords` entry.
