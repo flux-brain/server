@@ -159,6 +159,10 @@ class Config:
         self.openloops_title = str(g("openloops", "title", "Flux open items"))
         self.openloops_writers = [str(w).lower() for w in g("openloops", "writers", [])]
         self.openloops_row_owner = str(g("openloops", "row_owner", ""))      # Owner cell of rows the module adds
+        # 2026-11-19: vault file listing the owner's open rows whose Next check is past or within `due_days`, read by the
+        # daily digest (rows held in memory files have no page action, so the digest never saw their dates). "" = off.
+        self.openloops_due_file = str(g("openloops", "due_file", ""))
+        self.openloops_due_days = int(g("openloops", "due_days", 14))
         self.openloops_projects = {str(k): str(v) for k, v in (g("openloops", "projects", {}) or {}).items()}  # page -> project
         # default: the Drive token (drive.file is enough for a Sheet that `flux-openloops setup` created)
         self.openloops_token_file = str(self.home / g("openloops", "token_file", g("drive", "token_file", "drive-token.json")))
