@@ -81,6 +81,29 @@ def number_key(number):
     return digits[-9:] if len(digits) >= 8 else ""
 
 
+# Self-test notices (2026-11-19): the owner testing their own lines flooded the vault with one capture per
+# SMS or missed call (26 in two days). These two shapes name both ends (voip.ms) or the caller (Google Voice).
+VOIPMS_SMS = re.compile(r"from number \+?(\d+) to number \+?(\d+)", re.I)
+GV_MISSED = re.compile(r"missed a call from\b(.*?\d[\d() .\-]{6,}\d)", re.I)
+
+
+def is_self_test(sender, subject, snippet, mine):
+    """True when a notice is a call or SMS between two of the owner's numbers (`mine` = set of number_key values).
+    voip.ms SMS-to-email: BOTH numbers of the subject must be the owner's. Google Voice missed call: the caller must be the owner's
+    (the notice never names the line called, and every GV line is the owner's). Anything else: False."""
+    if not mine:
+        return False
+    sender = (sender or "").lower()
+    if "sms@voip.ms" in sender:
+        m = VOIPMS_SMS.search(subject or "")
+        return bool(m) and number_key(m.group(1)) in mine and number_key(m.group(2)) in mine
+    if "voice-noreply@google.com" in sender:
+        m = GV_MISSED.search(snippet or "")
+        # all digits of the caller text: PHONE_NUMBER misses the "(234) 564-6810" form GV writes
+        return bool(m) and number_key(m.group(1)) in mine
+    return False
+
+
 def state_file():
     return CFG.state_file("gmail-state.json")
 
@@ -542,6 +565,41 @@ class GmailRelay:
                 n += len(new)
         return out
 
+    def drop_self_tests(self, work):
+        """Remove self-test notices from `work` [(thread id, ids, followup)]: each one is marked Filed in Gmail and in
+        state (so it is never retried) and counted per UTC day in state["self_tests"]; a thread left empty is dropped.
+        One metadata read per message; a read error keeps the message (filing too much beats losing mail)."""
+        mine = {number_key(n) for n in CFG.gmail_self_numbers} - {""}
+        if not mine:
+            return work
+        out, dropped = [], []
+        for thread_id, ids, followup in work:
+            keep = []
+            for mid in ids:
+                try:
+                    m = self.api("GET", f"/messages/{mid}", params={
+                        "format": "metadata", "metadataHeaders": ["From", "Subject"]})
+                    h = {x["name"].lower(): x["value"] for x in m.get("payload", {}).get("headers", [])}
+                    hit = is_self_test(h.get("from"), h.get("subject"), m.get("snippet"), mine)
+                except Exception:  # noqa: BLE001 - keep it: the normal pass files it
+                    hit = False
+                (dropped if hit else keep).append(mid)
+            if keep:
+                out.append((thread_id, keep, followup))
+        if dropped and not DRY:
+            self.relabel(dropped)
+            day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            counts = self.st.setdefault("self_tests", {})
+            counts[day] = counts.get(day, 0) + len(dropped)
+            for k in sorted(counts)[:-14]:  # keep two weeks of daily counts
+                counts.pop(k)
+            for mid in dropped:
+                self.st["filed"][mid] = int(time.time())
+            save_state(self.st)
+        if dropped:
+            log(f"gmail: {len(dropped)} self-test notice(s) not filed{' (dry run)' if DRY else ''}: {', '.join(dropped)}")
+        return out
+
     def run(self):
         labels = self.labels = self.label_ids()
         if CFG.gmail_label not in labels:
@@ -559,6 +617,7 @@ class GmailRelay:
             # the label pass comes first and the two share the per-run budget
             followed = self.follow_pending(set(threads), MAX_PER_RUN - len(todo))
             work += [(thread_id, ids, True) for thread_id, ids in followed.items()]
+        work = self.drop_self_tests(work)  # 2026-11-19: own-number test notices never reach the vault
         filed = 0
         fails = self.st.setdefault("thread_failures", {})  # {thread id: attempts}; only failing threads ever appear
         for thread_id, ids, followup in work:
