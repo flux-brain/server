@@ -48,7 +48,7 @@ those two files; the code contains none.
 | Drive attachments | shipped (`flux-drive-auth`) | Google Cloud OAuth client, a folder |
 | Drive link details (`[drive] links`) | shipped, off by default | a Drive token that can read the linked files (drive.readonly) |
 | Web page text (`[capture] web_links`) | shipped, off by default | outbound http(s) from the server; a private capture channel |
-| Gmail feed | shipped (`flux-gmail`, `flux-gmail-auth`) | Gmail API, scope gmail.modify |
+| Gmail feed | shipped (`flux-gmail`, `flux-gmail-auth`) | Gmail API, scope gmail.modify; optional `[gmail] self_numbers` keeps test calls and SMS between your own numbers out of the vault |
 | Voicemail emails | shipped (part of `flux-gmail`, `[gmail] voicemail_from`), off by default | the Gmail token; transcribed, posted, archived |
 | Google Tasks checklists | shipped (`flux-tasks`, `flux-tasks-auth`) | Tasks API, scope tasks; also writes `tasks/links.md` (each open action's task link, for the briefings) |
 | Google Calendar day files | shipped (`flux-calendar`, `flux-calendar-auth`) | Calendar API, two read-only scopes (events, calendar list); event and video links included |
@@ -56,7 +56,7 @@ those two files; the code contains none.
 | Weekly briefing by email (`[digest] weekly_email`) | shipped, off by default | the Gmail token; sent only to the token's own address |
 | Follow-ups (waiting on) | shipped (`flux-followups`), off by default | the Gmail token |
 | Gmail triage (✅ / ✍️ buttons) | shipped (`flux-triage`), off by default | the Gmail token, the bot |
-| Open-items Sheet | shipped (`flux-openloops`, `flux-openloops setup`), off by default | the Drive token (drive.file covers the Sheet `setup` creates) and the Sheets API; every open item in one Sheet, instructions typed on a row become `source: sheet` captures, answers and new page actions come back as rows; only the configured `writers` may edit it |
+| Open-items Sheet | shipped (`flux-openloops`, `flux-openloops setup`), off by default | the Drive token (drive.file covers the Sheet `setup` creates) and the Sheets API; every open item in one Sheet, instructions typed on a row become `source: sheet` captures, answers and new page actions come back as rows; only the configured `writers` may edit it; optional `due_file` lists the owner's rows due by date for the digest |
 | Google Keep checklists | not shipped | no public API; replaced by Tasks |
 | Memory mirror + reconcile | not shipped | Claude Code file-based memory store |
 

@@ -87,6 +87,8 @@ voicemail_from = []                # e.g. ["voicemail@operator.example"]: a new 
 voicemail_archive = true           # ... and the email then leaves the inbox (false: it stays there)
 voicemail_contacts_token_file = "" # optional: a Google token allowed to read your contacts; a caller's number found
                                    # there is then shown with the contact's name
+self_numbers = []                  # optional: your own phone numbers; a voip.ms SMS notice between two of them, or a
+                                   # Google Voice missed call from one, is a self-test: marked Filed, never captured
 
 [tasks]                            # when modules.tasks = true
 token_file = "tasks-token.json"
@@ -139,6 +141,9 @@ title = "Flux open items"
 row_owner = ""                     # Owner cell of the rows the module adds for new page actions
 projects = {}                      # optional: vault page name -> project name, e.g. { kitchen-renovation = "home" };
                                    # with a memory mirror in the vault, unlisted pages take the cluster of their memory: files
+due_file = ""                      # optional, e.g. "openloops/due.md": vault file listing the owner's open rows whose
+                                   # Next check is past or within due_days (rows held by a page action left out), for the digest
+due_days = 14
 # token_file = "drive-token.json"  # default: [drive] token_file (drive.file is enough for a Sheet setup created)
 
 [triage]                           # when modules.triage = true; uses [gmail] token_file and the Discord bot
