@@ -508,3 +508,58 @@ def test_redact_strips_a_sign_in_token_and_counts_it():
     text, n = gr.redact(f"View and sign documents: https://app.example/signing?login_request_token={token}&doc_id=7")
     assert n == 1 and token not in text and "https://app.example/signing?login_request_token=[REDACTED]&doc_id=7" in text
     assert gr.redact("Plain words, and a link https://x.example/a?page=2") == ("Plain words, and a link https://x.example/a?page=2", 0)
+
+
+# ---------- self-test notices (2026-11-19): own-number SMS / missed calls never reach the vault ----------
+MINE = ["2125550101", "+1 312 555 0102", "4155550103", "+44 7700 900104"]
+
+
+def test_is_self_test_shapes():
+    mine = {gr.number_key(n) for n in MINE}
+    sub = "Message received from number 2125550101 to number 3125550102 [#x]"
+    assert gr.is_self_test("2125550101 <sms@voip.ms>", sub, "", mine)
+    # a stranger texting the owner's number is real mail
+    assert not gr.is_self_test("6465550100 <sms@voip.ms>",
+                               "Message received from number 6465550100 to number 3125550102 [#x]", "", mine)
+    gv = "Google Voice Hello Alex, You missed a call from 🇺🇸 voip.ms (312) 555-0102. call back"
+    assert gr.is_self_test("Google Voice <voice-noreply@google.com>", "New missed call", gv, mine)
+    assert gr.is_self_test("Google Voice <voice-noreply@google.com>", "x",
+                           "You missed a call from Alex Example +44 7700 900104. call back", mine)
+    assert not gr.is_self_test("Google Voice <voice-noreply@google.com>", "x",
+                               "You missed a call from (646) 555-0100. call back", mine)
+    assert not gr.is_self_test("someone@example.com", sub, gv, mine)   # same text, other sender
+    assert not gr.is_self_test("2125550101 <sms@voip.ms>", sub, "", set())   # off without numbers
+
+
+def test_self_test_followup_marked_filed_not_captured(monkeypatch):
+    fh = FollowHarness(monkeypatch)
+    monkeypatch.setattr(gr.CFG, "gmail_self_numbers", MINE)
+    r = fh.make({"filed": {"f1": 1}, "filed_threads": {"T1": 1}, "filed_threads_refreshed": gr.time.time()},
+                incoming=[{"id": "n1", "threadId": "T1"}, {"id": "n2", "threadId": "T1"}],
+                threads={"T1": [{"id": "f1", "labelIds": ["L2"]}, {"id": "n1", "labelIds": ["INBOX"]},
+                                {"id": "n2", "labelIds": ["INBOX"]}]})
+    base_api = r.api
+    meta = {"n1": ("Google Voice <voice-noreply@google.com>", "You missed a call from voip.ms (312) 555-0102."),
+            "n2": ("Google Voice <voice-noreply@google.com>", "You missed a call from (646) 555-0100.")}
+
+    def api(method, path, **kw):
+        if path.startswith("/messages/") and (kw.get("params") or {}).get("format") == "metadata":
+            frm, snip = meta[path.split("/")[2]]
+            return {"payload": {"headers": [{"name": "From", "value": frm}, {"name": "Subject", "value": "x"}]},
+                    "snippet": snip}
+        return base_api(method, path, **kw)
+    r.api = api
+    assert r.run() == 1
+    assert fh.filed_calls == [("T1", ["n2"], True)]          # the stranger's call is filed
+    assert ["n1"] in fh.relabelled() and "n1" in r.st["filed"]  # the self-test is marked Filed, not captured
+    assert sum(r.st["self_tests"].values()) == 1
+
+
+def test_self_test_off_without_numbers_changes_nothing(monkeypatch):
+    fh = FollowHarness(monkeypatch)
+    monkeypatch.setattr(gr.CFG, "gmail_self_numbers", [])
+    r = fh.make({"filed": {"f1": 1}, "filed_threads": {"T1": 1}, "filed_threads_refreshed": gr.time.time()},
+                incoming=[{"id": "n1", "threadId": "T1"}],
+                threads={"T1": [{"id": "f1", "labelIds": ["L2"]}, {"id": "n1", "labelIds": ["INBOX"]}]})
+    assert r.run() == 1 and fh.filed_calls == [("T1", ["n1"], True)]
+    assert not any(c[1].startswith("/messages/n1") for c in fh.calls)   # no metadata reads when off

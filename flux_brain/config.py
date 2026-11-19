@@ -184,6 +184,10 @@ class Config:
         # conversation channel through notify/, and the email leaves the inbox. Empty = the pass is off.
         self.gmail_voicemail_from = [str(a).strip().lower() for a in g("gmail", "voicemail_from", []) if str(a).strip()]
         self.gmail_voicemail_archive = bool(g("gmail", "voicemail_archive", True))
+        # The owner's own phone numbers (2026-11-19): a voip.ms SMS notice or a Google Voice missed-call notice
+        # between two of them is a self-test, marked Filed in Gmail but never filed into the vault (flux_brain.gmail,
+        # drop_self_tests). Empty = off.
+        self.gmail_self_numbers = [str(n).strip() for n in g("gmail", "self_numbers", []) if str(n).strip()]
         # Optional: a Google token that may read the owner's contacts (scope contacts.readonly or contacts). With it, a
         # phone number in a voicemail email that belongs to a contact is shown with that contact's name.
         vct = g("gmail", "voicemail_contacts_token_file", "")
