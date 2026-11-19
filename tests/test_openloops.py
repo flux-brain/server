@@ -333,3 +333,55 @@ def test_project_lookup_order():
     assert ol.page_project("house", {"house": "home"}, text, cl) == "home"     # the flux.toml map wins
     assert ol.page_project("house", {}, text, cl) == "beta"                     # first file an index lists
     assert ol.page_project("house", {}, "---\nmemory: []\n---", cl) == "house"  # else the page name
+
+
+# ---------- due file (2026-11-19): owner's rows due by date, for the daily digest ----------
+DUE_ROWS = {
+    "A-1": {"Project": "a", "Item": "past", "Owner": "Alex", "Status": "check", "Next check": "2026-11-10"},
+    "A-2": {"Project": "a", "Item": "soon", "Owner": "Alex", "Status": "open", "Next check": "2026-11-25"},
+    "A-3": {"Project": "a", "Item": "far", "Owner": "Alex", "Status": "open", "Next check": "2027-01-04"},
+    "A-4": {"Project": "a", "Item": "closed", "Owner": "Alex", "Status": "done", "Next check": "2026-11-12"},
+    "A-5": {"Project": "a", "Item": "other owner", "Owner": "Sam", "Status": "open", "Next check": "2026-11-12"},
+    "A-6": {"Project": "a", "Item": "no date", "Owner": "Alex", "Status": "open", "Next check": "when it ships"},
+    "A-7": {"Project": "a", "Item": "page action", "Owner": "Alex", "Status": "open", "Next check": "2026-11-12",
+            "Holder": "vault:wiki/projects/a.md#^ab12"},
+}
+
+
+def test_due_text_filters_and_sorts():
+    t = ol.due_text(DUE_ROWS, "2026-11-19", 14, "Alex")
+    lines = [ln for ln in t.splitlines() if ln.startswith("- ")]
+    assert [ln.split(" · ")[1].split(" ")[0] for ln in lines] == ["A-1", "A-2"]   # past first, far/closed/other/no date out
+    assert ol.due_text(DUE_ROWS, "2026-11-19", 14, "") .count("\n- ") == 3        # no owner filter: A-5 too
+    assert ol.due_text({}, "2026-11-19", 14) == ""
+
+
+class DueGH:
+    def __init__(self, existing=None):
+        self.text, self.puts, self.deletes = existing, [], []
+
+    def get(self, path):
+        return (self.text, "sha0") if self.text is not None else (None, None)
+
+    def put(self, path, text, msg, sha=None):
+        self.puts.append((path, sha)); self.text = text
+
+    def delete(self, path, sha, msg):
+        self.deletes.append(path); self.text = None
+
+
+def test_write_due_commits_only_on_change_and_deletes_when_empty(monkeypatch):
+    monkeypatch.setattr(ol.CFG, "openloops_due_file", "openloops/due.md")
+    monkeypatch.setattr(ol.CFG, "openloops_due_days", 14)
+    monkeypatch.setattr(ol.CFG, "openloops_row_owner", "Alex")
+    gh, st = DueGH(), {}
+    assert ol.write_due(DUE_ROWS, gh, st, "2026-11-19") == "due file: 2 row(s)"
+    assert gh.puts == [("openloops/due.md", None)]
+    assert ol.write_due(DUE_ROWS, gh, st, "2026-11-20") is None            # same rows next day: no commit
+    assert ol.write_due({}, gh, st, "2026-11-20") == "due file: 0 row(s)" and gh.deletes == ["openloops/due.md"]
+    assert ol.write_due(DUE_ROWS, gh, {}, "2026-11-19", dry=True).startswith("DRY")
+
+
+def test_write_due_off_by_default(monkeypatch):
+    monkeypatch.setattr(ol.CFG, "openloops_due_file", "")
+    assert ol.write_due(DUE_ROWS, None, {}, "2026-11-19") is None

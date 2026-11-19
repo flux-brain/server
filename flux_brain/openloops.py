@@ -249,6 +249,54 @@ def next_id(project, rows, taken):
     return f"{pre}{(max(nums) if nums else 0) + 1:02d}"
 
 
+def due_text(rows, today, days, owner=""):
+    """The due list as vault Markdown, or "" when nothing is due. Rows not closed, not held by a vault page action,
+    Owner = `owner` (any when empty),
+    Next check an ISO date on or before today + `days`; soonest first. ABSOLUTE dates only, so the text (and the
+    commit) changes when a row changes, not every day: the digest works out "overdue" / "in N days" itself."""
+    limit = (datetime.date.fromisoformat(today) + datetime.timedelta(days=days)).isoformat()
+    due = []
+    for rid, r in rows.items():
+        nc = r.get("Next check", "")
+        if r.get("Status", "").lower() in CLOSED_STATUSES or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", nc):
+            continue
+        if owner and r.get("Owner", "") != owner:
+            continue
+        if r.get("Holder", "").startswith("vault:"):   # a page action: the digest already lists it with its date
+            continue
+        if nc <= limit:
+            due.append((nc, rid, r))
+    if not due:
+        return ""
+    out = [f"# Open Loops: due by date\n\nWritten by flux-openloops from the Sheet `{CFG.openloops_title}`: open rows"
+           f"{' owned by ' + owner if owner else ''} whose Next check is past or within {days} days of the last change. "
+           "Read-only; edit the Sheet, not this file.\n"]
+    for nc, rid, r in sorted(due, key=lambda t: (t[0], t[1])):
+        out.append(f"- {nc} · {rid} ({r.get('Project', '')}, {r.get('Status', '')}): {r.get('Item', '')[:200]}")
+    return "\n".join(out) + "\n"
+
+
+def write_due(rows, gh, state, today, dry=False):
+    """Commit CFG.openloops_due_file when its content changed (hash in state); delete it when nothing is due.
+    -> log line or None."""
+    path = CFG.openloops_due_file
+    if not path:
+        return None
+    text = due_text(rows, today, CFG.openloops_due_days, CFG.openloops_row_owner)
+    h = ihash(text)
+    if state.get("due_hash") == h:
+        return None
+    if dry:
+        return f"DRY due file: {text.count(chr(10) + '- ')} row(s)"
+    _, sha = gh.get(path)
+    if text:
+        gh.put(path, text, f"openloops: due list ({text.count(chr(10) + '- ')} row(s))", sha=sha)
+    elif sha:
+        gh.delete(path, sha, "openloops: nothing due")
+    state["due_hash"] = h
+    return f"due file: {text.count(chr(10) + '- ')} row(s)"
+
+
 def run(sheet, gh, bot, state, today, now, dry=False, allowed=(),
         relay=None, guild="", projects=None):
     """One pass. Returns (exit code, list of log lines). Pure apart from the injected clients.
@@ -475,6 +523,14 @@ def run(sheet, gh, bot, state, today, now, dry=False, allowed=(),
                     lines.append(f"move {old} -> ^{mv['id']}: no row appeared within 1 h, left for a human")
                     if not dry:
                         moves.pop(old)
+    # 7 (2026-11-19): the due list for the daily digest; read-only on the Sheet, a failure never blocks the rest
+    try:
+        msg = write_due(rows, gh, state, today, dry)
+        if msg:
+            lines.append(msg)
+    except Exception as exc:                                       # noqa: BLE001
+        lines.append(f"due file FAILED ({exc.__class__.__name__}: {str(exc)[:120]}), retried next run")
+        rc = 1
     # one summary line per run, so the log shows the Sheet was read even when nothing happened
     lines.append(f"run: {len(rows)} rows, {sum(1 for r in rows.values() if r.get('Instruction'))} with an instruction")
     return rc, lines
